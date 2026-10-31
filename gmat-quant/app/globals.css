@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+}
+.dark {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100;
+}
+
+/* Rendu du Markdown (cours, énoncés, explications) */
+.prose-md {
+  @apply leading-relaxed;
+}
+.prose-md p {
+  @apply my-2;
+}
+.prose-md h3 {
+  @apply mt-6 mb-2 text-lg font-semibold;
+}
+.prose-md ul {
+  @apply my-2 list-disc pl-6;
+}
+.prose-md ol {
+  @apply my-2 list-decimal pl-6;
+}
+.prose-md li {
+  @apply my-1;
+}
+.prose-md table {
+  @apply my-3 border-collapse text-sm;
+}
+.prose-md th,
+.prose-md td {
+  @apply border border-zinc-300 px-3 py-1 text-left dark:border-zinc-700;
+}
+.prose-md strong {
+  @apply font-semibold;
+}
+.prose-md em {
+  @apply italic;
+}
+.prose-md .katex-display {
+  @apply my-3 overflow-x-auto overflow-y-hidden py-1;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+}
