@@ -37,7 +37,13 @@ export default async function ChapterPage({ params }: { params: Promise<{ id: st
         <ChapterView chapter={id} course={<CourseView course={course} />} summary={<SummarySheet course={course} title={`${info.id}. ${info.title}`} />} />
       ) : (
         <Card>
-          <p className="mb-2">Contenu en cours de rédaction (phase 3, livré au moins une semaine avant sa date dans le calendrier).</p>
+          <p className="mb-2">
+            Ce chapitre n'est pas encore rédigé : il sera livré au moins une semaine avant sa date dans le calendrier. Pour l'instant, seul le chapitre pilote{" "}
+            <Link href="/chapitres/A3" className="font-semibold underline">
+              A3 Pourcentages
+            </Link>{" "}
+            a son cours et ses exercices.
+          </p>
           <p className="mb-1 text-sm font-semibold">Notions de ce chapitre :</p>
           <ul className="list-disc pl-6 text-sm">
             {info.notions.map((n) => (
