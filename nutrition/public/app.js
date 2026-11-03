@@ -202,7 +202,7 @@ function render() {
 function renderLocked() {
   return `
     <div class="hero">
-      <img class="logo" src="/icons/icon.svg" alt="">
+      <img class="logo" src="/icons/icon-192.png" alt="">
       <h1>Assiette</h1>
       <p class="muted">Cette appli s'ouvre uniquement avec son lien d'accès complet.</p>
     </div>
@@ -262,7 +262,7 @@ function profileFields(p = {}) {
 function renderOnboarding() {
   return `
     <div class="hero">
-      <img class="logo" src="/icons/icon.svg" alt="">
+      <img class="logo" src="/icons/icon-192.png" alt="">
       <h1>Bienvenue sur Assiette</h1>
       <p class="muted">Photographie tes repas, l'appli estime les calories et les macros. Tes données restent sur ton téléphone : pas de compte, pas d'email.</p>
     </div>
