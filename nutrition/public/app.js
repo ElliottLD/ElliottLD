@@ -54,6 +54,10 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 const round = (n) => Math.round(Number(n) || 0);
 const round1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+// Poids à la française : virgule et jusqu'à 2 décimales (72,45).
+const fmtKg = (n) => (Number(n) || 0).toLocaleString("fr-FR", { maximumFractionDigits: 2 });
+const parseKg = (s) => parseFloat(String(s ?? "").trim().replace(",", "."));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 function esc(s) {
@@ -241,8 +245,8 @@ function profileFields(p = {}) {
     <div class="grid-2">
       <label class="field"><span>Âge</span><input name="age" type="number" inputmode="numeric" min="14" max="99" required value="${p.age ?? ""}"></label>
       <label class="field"><span>Taille (cm)</span><input name="height" type="number" inputmode="numeric" min="120" max="230" required value="${p.height ?? ""}"></label>
-      <label class="field"><span>Poids actuel (kg)</span><input name="weight" type="number" inputmode="decimal" step="0.1" min="35" max="250" required value="${p.weight ?? ""}"></label>
-      <label class="field"><span>Poids visé (kg)</span><input name="goalWeight" type="number" inputmode="decimal" step="0.1" min="35" max="250" required value="${p.goalWeight ?? ""}"></label>
+      <label class="field"><span>Poids actuel (kg)</span><input name="weight" type="text" inputmode="decimal" autocomplete="off" required value="${p.weight ? fmtKg(p.weight) : ""}"></label>
+      <label class="field"><span>Poids visé (kg)</span><input name="goalWeight" type="text" inputmode="decimal" autocomplete="off" required value="${p.goalWeight ? fmtKg(p.goalWeight) : ""}"></label>
     </div>
     <label class="field"><span>Activité</span>
       <select name="activity">${ACTIVITY.map((a) => `<option value="${a.v}" ${a.v === activity ? "selected" : ""}>${a.label}</option>`).join("")}</select>
@@ -273,7 +277,7 @@ function renderOnboarding() {
 
 function readProfileForm(form) {
   const f = new FormData(form);
-  const num = (k) => parseFloat(String(f.get(k)).replace(",", "."));
+  const num = (k) => parseKg(f.get(k));
   const p = {
     name: String(f.get("name") || "").trim(),
     sex: f.get("sex") === "f" ? "f" : "m",
@@ -339,6 +343,8 @@ function bindProfileForm(form, isNew) {
     const p = readProfileForm(form);
     if (!p) { toast("Complète l'âge, la taille et les poids."); return; }
     const previous = state.profile;
+    p.weight = round2(p.weight);
+    p.goalWeight = round2(p.goalWeight);
     state.profile = { ...previous, ...p, startWeight: previous?.startWeight ?? p.weight, createdAt: previous?.createdAt ?? Date.now() };
     saveProfile();
     if (isNew || !state.weights.length || p.weight !== previous?.weight) logWeight(p.weight, todayKey(), false);
@@ -422,7 +428,7 @@ function mealRow(m) {
 /* ----- Écran Poids ----- */
 
 function logWeight(kg, date = todayKey(), notify = true) {
-  const value = round1(kg);
+  const value = round2(kg);
   state.weights = state.weights.filter((w) => w.date !== date).concat({ date, kg: value }).sort((a, b) => a.date.localeCompare(b.date));
   saveWeights();
   const latest = state.weights[state.weights.length - 1];
@@ -455,9 +461,9 @@ function weightChart(points, goal) {
   const ticks = [lo, (lo + hi) / 2, hi];
   return `
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Courbe de poids">
-      ${ticks.map((v) => `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${pad.l - 6}" y="${y(v) + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${round1(v)}</text>`).join("")}
+      ${ticks.map((v) => `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${pad.l - 6}" y="${y(v) + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${fmtKg(round1(v))}</text>`).join("")}
       <line x1="${pad.l}" x2="${W - pad.r}" y1="${y(goal)}" y2="${y(goal)}" stroke="var(--accent)" stroke-dasharray="4 4"/>
-      <text x="${W - pad.r}" y="${y(goal) - 5}" text-anchor="end" font-size="10" fill="var(--accent)">objectif ${goal} kg</text>
+      <text x="${W - pad.r}" y="${y(goal) - 5}" text-anchor="end" font-size="10" fill="var(--accent)">objectif ${fmtKg(goal)} kg</text>
       ${points.map((p) => `<circle cx="${x(p.date)}" cy="${y(p.kg)}" r="2.5" fill="var(--muted)" opacity=".6"/>`).join("")}
       <path d="${line}" fill="none" stroke="var(--text)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
       <text x="${pad.l}" y="${H - 6}" font-size="10" fill="var(--muted)">${shortDate(points[0].date)}</text>
@@ -484,7 +490,7 @@ function renderWeight() {
   const pts = state.weights;
   const current = pts.length ? pts[pts.length - 1].kg : p.weight;
   const start = p.startWeight ?? current;
-  const left = round1(current - p.goalWeight);
+  const left = round2(current - p.goalWeight);
   const trend = weeklyTrend(pts);
   let eta = "";
   if (trend !== null && Math.abs(left) > 0.2) {
@@ -501,19 +507,19 @@ function renderWeight() {
   return `
     <h1>Poids</h1>
     <form id="weight-form" class="card" style="display:flex;gap:10px;align-items:flex-end">
-      <label class="field" style="flex:1;margin:0"><span>Pesée du jour (kg)</span><input name="kg" type="number" inputmode="decimal" step="0.1" min="35" max="250" placeholder="${current}" required></label>
+      <label class="field" style="flex:1;margin:0"><span>Pesée du jour (kg)</span><input name="kg" type="text" inputmode="decimal" autocomplete="off" placeholder="${fmtKg(current)}" required></label>
       <button class="btn primary" type="submit">Enregistrer</button>
     </form>
     <div class="card stats">
-      <div><b>${start}</b><span>départ</span></div>
-      <div><b>${current}</b><span>actuel</span></div>
-      <div><b>${left > 0 ? left : Math.abs(left)}</b><span>${left > 0 ? "kg à perdre" : left < 0 ? "kg à prendre" : "objectif atteint"}</span></div>
+      <div><b>${fmtKg(start)}</b><span>départ</span></div>
+      <div><b>${fmtKg(current)}</b><span>actuel</span></div>
+      <div><b>${fmtKg(Math.abs(left))}</b><span>${left > 0 ? "kg à perdre" : left < 0 ? "kg à prendre" : "objectif atteint"}</span></div>
     </div>
     <div class="card chart">
       ${weightChart(pts, p.goalWeight)}
-      ${trend !== null ? `<p class="small" style="margin:10px 0 0">Tendance : <b>${trend > 0 ? "+" : ""}${round1(trend)} kg / semaine</b>. ${eta}</p>` : `<p class="small muted" style="margin:10px 0 0">Pèse-toi le matin à jeun, 2 à 3 fois par semaine. La tendance s'affiche après une semaine.</p>`}
+      ${trend !== null ? `<p class="small" style="margin:10px 0 0">Tendance : <b>${trend > 0 ? "+" : ""}${fmtKg(round2(trend))} kg / semaine</b>. ${eta}</p>` : `<p class="small muted" style="margin:10px 0 0">Pèse-toi le matin à jeun, 2 à 3 fois par semaine. La tendance s'affiche après une semaine.</p>`}
     </div>
-    ${recent.length ? `<h2>Dernières pesées</h2><div class="card">${recent.map((w) => `<div class="weight-row"><span>${dayLabel(w.date)}</span><span><b>${w.kg} kg</b> <button data-act="del-weight" data-date="${w.date}" aria-label="Supprimer">✕</button></span></div>`).join("")}</div>` : ""}`;
+    ${recent.length ? `<h2>Dernières pesées</h2><div class="card">${recent.map((w) => `<div class="weight-row"><span>${dayLabel(w.date)}</span><span><b>${fmtKg(w.kg)} kg</b> <button data-act="del-weight" data-date="${w.date}" aria-label="Supprimer">✕</button></span></div>`).join("")}</div>` : ""}`;
 }
 
 /* ----- Écran Historique ----- */
@@ -1126,7 +1132,7 @@ document.addEventListener("change", (e) => {
 document.addEventListener("submit", (e) => {
   if (e.target.id !== "weight-form") return;
   e.preventDefault();
-  const kg = parseFloat(String(new FormData(e.target).get("kg")).replace(",", "."));
+  const kg = parseKg(new FormData(e.target).get("kg"));
   if (!(kg > 30 && kg < 300)) { toast("Poids invalide."); return; }
   logWeight(kg);
   render();
