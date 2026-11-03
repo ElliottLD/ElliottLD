@@ -172,6 +172,10 @@ textarea { min-height: 76px; resize: vertical; }
 .food-row { padding: 10px 0; border-top: 1px solid var(--line); }
 .food-row:first-child { border-top: 0; padding-top: 0; }
 .food-row:last-child { padding-bottom: 0; }
+.food-qty { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.food-qty input { width: 96px; flex: none; text-align: right; }
+.unit-btn { min-height: 48px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.unit-btn.static { border-color: transparent; background: none; color: var(--muted); cursor: default; padding: 0 4px; }
 .food-hint { margin: 6px 2px 0; min-height: 1em; }
 .food-hint:empty { display: none; }
 .item-macros { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; }
