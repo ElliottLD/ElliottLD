@@ -26,12 +26,14 @@ const state = {
   profile: store.get("profile", null),
   meals: store.get("meals", []),
   weights: store.get("weights", []),
+  recipes: store.get("recipes", []),
   tab: "today",
   day: todayKey(),
 };
 
 function saveMeals() { store.set("meals", state.meals); }
 function saveWeights() { store.set("weights", state.weights); }
+function saveRecipes() { store.set("recipes", state.recipes); refreshFoodList(); }
 function saveProfile() { store.set("profile", state.profile); }
 
 /* ---------- Clé d'accès (lien secret) ---------- */
@@ -682,6 +684,17 @@ function renderProfile() {
       <div id="targets-preview"></div>
       <button class="btn primary block" type="submit">Enregistrer le profil</button>
     </form>
+    <h2>Mes recettes</h2>
+    <div class="card">
+      ${state.recipes.length
+        ? state.recipes.map((r) => { const t = recipeTotals(r.items); return `
+          <div class="weight-row" data-act="edit-recipe" data-id="${r.id}" style="cursor:pointer">
+            <span><b>${esc(r.name)}</b><br><span class="small muted">${round(t.kcal)} kcal · P ${round(t.protein)} g · G ${round(t.carbs)} g · L ${round(t.fat)} g</span></span>
+            <span class="muted">›</span>
+          </div>`; }).join("")
+        : `<p class="small muted">Shaker, porridge, bowl… Enregistre ce que tu prépares souvent avec ses ingrédients : tu l'ajouteras ensuite à un repas en un geste, sans photo.</p>`}
+      <button class="btn block" style="margin-top:10px" data-act="new-recipe">+ Nouvelle recette</button>
+    </div>
     <h2>Partager l'appli</h2>
     <div class="card">
       <p class="small">Envoie ce lien à un proche : chacun a son propre suivi sur son téléphone, personne ne voit les données des autres.</p>
@@ -832,6 +845,12 @@ function onFoodInput(el) {
   }
   refreshFoodRow(i);
   refreshAnalyzeButton();
+  refreshRecipeTotals();
+}
+
+function refreshRecipeTotals() {
+  const box = $("#recipe-totals");
+  if (box && draft?.kind === "recipe") box.innerHTML = recipeTotalsHtml(draft);
 }
 
 function toggleUnit(i) {
@@ -876,6 +895,7 @@ function renderDraft(loading = false) {
         ? `<img class="preview" src="${d.image}" alt="Photo du repas"><button class="link" data-act="clear-photo">Changer de photo</button>`
         : `<div class="pick"><button class="btn" data-act="camera"><span>📷</span>Prendre une photo</button><button class="btn" data-act="gallery"><span>🖼</span>Choisir une photo</button></div>`}
       <h2>Aliments ${d.image ? `<span class="small muted" style="font-weight:400">(facultatif avec une photo)</span>` : ""}</h2>
+      ${state.recipes.length ? `<div class="chips">${state.recipes.map((r) => `<button class="chip" data-act="add-recipe" data-id="${r.id}">+ ${esc(r.name)}</button>`).join("")}</div>` : ""}
       <div class="card" id="food-rows">${d.foods.map(foodRow).join("")}</div>
       <button class="btn block" data-act="add-food">+ Ajouter un aliment</button>
       <p class="small muted" style="margin:8px 0 16px">Tape un aliment : la portion habituelle se remplit toute seule, change les grammes si besoin.</p>
@@ -925,6 +945,7 @@ function draftTotals(t) {
    Un aliment qui se compte peut s'afficher en unités (mode "u") : œufs, tranches, pots… */
 const MACROS = ["kcal", "protein", "carbs", "fat"];
 const SOURCES = {
+  recipe: ["src-table", "Recette"],
   table: ["src-table", "Table"],
   ai: ["src-ai", "IA"],
   manual: ["src-manual", "Modifié"],
@@ -953,11 +974,11 @@ function applyTable(it, food) {
   } else {
     it.mode = "g";
   }
-  Object.assign(it, foodValues(food, grams, it.name), { src: "table", per: null });
+  Object.assign(it, foodValues(food, grams, it.name), { src: food.recipe ? "recipe" : "table", per: null });
 }
 
 function tableItem(food, grams, mode = food.unit ? "u" : "g") {
-  const it = { name: food.name, grams, mode, src: "table" };
+  const it = { name: food.name, grams, mode, src: food.recipe ? "recipe" : "table" };
   Object.assign(it, foodValues(food, grams));
   return it;
 }
@@ -1035,7 +1056,7 @@ function normalizeItem(raw) {
     carbs: Math.max(0, +raw.carbs || 0),
     fat: Math.max(0, +raw.fat || 0),
   };
-  if (["table", "ai", "manual"].includes(raw.src)) it.src = raw.src;
+  if (["table", "recipe", "ai", "manual"].includes(raw.src)) it.src = raw.src;
   if (raw.mode === "u" || raw.mode === "g") it.mode = raw.mode;
   if (raw.aiName) it.aiName = String(raw.aiName).slice(0, 60);
   return it;
@@ -1078,7 +1099,7 @@ function onItemInput(el) {
     const unit = itemUnit(it);
     const grams = unit ? v * unit.g : v;
     const food = findFood(it.name);
-    if (it.src === "table" && food) {
+    if ((it.src === "table" || it.src === "recipe") && food) {
       Object.assign(it, foodValues(food, grams, it.name));
     } else {
       // Valeurs par gramme mémorisées, pour qu'un champ vidé puis retapé ne remette pas tout à zéro.
@@ -1258,6 +1279,143 @@ async function saveDraft() {
   else toast("Repas mis à jour.");
 }
 
+/* ---------- Mes recettes ----------
+   Une recette (shaker, porridge…) = un nom + des ingrédients avec leurs quantités.
+   Ses valeurs sont figées à l'enregistrement : table intégrée, sinon une seule estimation par l'IA.
+   Elle se comporte ensuite comme un aliment de la table, compté en portions. */
+
+function recipeTotals(items) {
+  return items.reduce((a, it) => ({ grams: a.grams + (+it.grams || 0), kcal: a.kcal + it.kcal, protein: a.protein + it.protein, carbs: a.carbs + it.carbs, fat: a.fat + it.fat }), { grams: 0, kcal: 0, protein: 0, carbs: 0, fat: 0 });
+}
+
+// Une recette vue comme un aliment : valeurs pour 100 g, une portion = la recette entière.
+function recipeFood(name) {
+  const k = normalizeFoodName(name);
+  const r = k && state.recipes.find((x) => normalizeFoodName(x.name) === k);
+  if (!r) return null;
+  const t = recipeTotals(r.items);
+  const g = t.grams > 0 ? t.grams : 100;
+  const per = (v) => (v / g) * 100;
+  return { name: r.name, kcal: per(t.kcal), protein: per(t.protein), carbs: per(t.carbs), fat: per(t.fat), portion: 1, aliases: [], unit: { label: "portion", g }, recipe: true };
+}
+
+// Les recettes passent avant la table : « Shaker » trouve d'abord la recette de la personne.
+const tableFindFood = findFood;
+findFood = (name) => recipeFood(name) || tableFindFood(name);
+
+function rowFromItem(it) {
+  const unit = it.mode === "u" ? findFood(it.name)?.unit : null;
+  const ai = it.src === "ai" ? { name: it.name, grams: it.grams, kcal: it.kcal, protein: it.protein, carbs: it.carbs, fat: it.fat } : null;
+  return { name: it.name, qty: String(unit ? round2(it.grams / unit.g) : round(it.grams)), mode: unit ? "u" : "g", unit, auto: false, ai };
+}
+
+// Ingrédient déjà estimé par l'IA et pas renommé : on réutilise ses valeurs, ramenées au poids.
+function cachedAi(f) {
+  return f.ai && f.ai.grams > 0 && normalizeFoodName(f.ai.name) === normalizeFoodName(f.name) ? f.ai : null;
+}
+
+function rowValues(f) {
+  const grams = rowGrams(f);
+  const food = findFood(f.name);
+  if (food && grams > 0) return { ...foodValues(food, grams), src: food.recipe ? "recipe" : "table", mode: f.mode === "u" && food.unit ? "u" : "g" };
+  const ai = cachedAi(f);
+  if (ai && grams > 0) {
+    const r = grams / ai.grams;
+    return { name: f.name.trim(), grams, kcal: ai.kcal * r, protein: ai.protein * r, carbs: ai.carbs * r, fat: ai.fat * r, src: "ai", aiName: ai.name, mode: "g" };
+  }
+  return null;
+}
+
+function recipeTotalsHtml(d) {
+  const rows = namedFoods(d);
+  const values = rows.map(rowValues);
+  const t = recipeTotals(values.filter(Boolean));
+  const missing = values.filter((v) => !v).length;
+  return `
+    <p class="small muted" style="margin-bottom:10px">Total de la recette (1 portion${t.grams ? ` ≈ ${round(t.grams)} g` : ""})</p>
+    ${draftTotals(t)}
+    ${missing ? `<p class="small muted" style="margin:10px 0 0">+ ${missing} ingrédient${missing > 1 ? "s" : ""} pas dans la table : l'IA ${missing > 1 ? "les " : "l'"}estimera à l'enregistrement.</p>` : ""}`;
+}
+
+function openRecipe(id) {
+  const r = id ? state.recipes.find((x) => x.id === id) : null;
+  draft = { kind: "recipe", id: r?.id || null, name: r?.name || "", foods: r ? r.items.map(rowFromItem) : [emptyFood()] };
+  renderRecipe();
+}
+
+function renderRecipe(saving = false) {
+  const d = draft;
+  openSheet(`
+    <div class="sheet-head"><h1>${d.id ? "Modifier la recette" : "Nouvelle recette"}</h1><button class="close" data-act="close" aria-label="Fermer">✕</button></div>
+    <label class="field"><span>Nom</span><input data-draft="name" value="${esc(d.name)}" maxlength="40" placeholder="Ex. Shaker prise de masse"></label>
+    <h2>Ingrédients</h2>
+    <div class="card" id="food-rows">${d.foods.map(foodRow).join("")}</div>
+    <button class="btn block" data-act="add-food">+ Ajouter un ingrédient</button>
+    <div class="card" id="recipe-totals" style="margin-top:16px">${recipeTotalsHtml(d)}</div>
+    <button class="btn primary block" data-act="save-recipe" ${saving ? "disabled" : ""}>${saving ? "Estimation des ingrédients…" : "Enregistrer la recette"}</button>
+    ${d.id ? `<button class="btn danger block" style="margin-top:10px" data-act="delete-recipe">Supprimer la recette</button>` : ""}`);
+}
+
+function renderSheet() {
+  if (draft?.kind === "recipe") renderRecipe();
+  else renderDraft();
+}
+
+async function saveRecipe() {
+  const d = draft;
+  const name = d.name.trim();
+  if (!name) { toast("Donne un nom à ta recette."); return; }
+  if (state.recipes.some((r) => r.id !== d.id && normalizeFoodName(r.name) === normalizeFoodName(name))) { toast("Tu as déjà une recette avec ce nom."); return; }
+  const rows = namedFoods(d);
+  if (!rows.length) { toast("Ajoute au moins un ingrédient."); return; }
+  if (rows.some((f) => !(rowGrams(f) > 0))) { toast("Indique la quantité de chaque ingrédient."); return; }
+  const items = [];
+  const unknown = [];
+  for (const f of rows) {
+    const v = rowValues(f);
+    if (v) items.push(normalizeItem(v));
+    else unknown.push(f);
+  }
+  if (unknown.length) {
+    renderRecipe(true);
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-access-key": ACCESS_KEY },
+        body: JSON.stringify({ note: `Estime uniquement ces aliments, un par ligne, avec ces quantités : ${foodsText(unknown)}` }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Estimation impossible, réessaie.");
+      if (!data.items?.length) throw new Error(data.comment || "Ingrédients non reconnus : vérifie leur nom.");
+      if (draft !== d) return;
+      for (const raw of data.items) items.push({ ...normalizeItem(raw), src: "ai", aiName: String(raw.name || "").slice(0, 60), mode: "g" });
+    } catch (err) {
+      if (draft !== d) return;
+      toast(navigator.onLine ? err.message : "Pas de connexion internet.");
+      renderRecipe();
+      return;
+    }
+  }
+  const recipe = { id: d.id || uid(), name, items, updatedAt: Date.now() };
+  if (d.id) state.recipes = state.recipes.map((r) => (r.id === d.id ? recipe : r));
+  else state.recipes.push(recipe);
+  saveRecipes();
+  closeSheet();
+  render();
+  toast(`« ${name} » : ${round(recipeTotals(items).kcal)} kcal par portion.`);
+}
+
+// Raccourci « + Shaker » dans « Nouveau repas » : une portion de la recette.
+function addRecipeToMeal(id) {
+  const r = state.recipes.find((x) => x.id === id);
+  if (!r || !draft) return;
+  const food = recipeFood(r.name);
+  const last = draft.foods[draft.foods.length - 1];
+  const row = last && !last.name.trim() ? last : (draft.foods.push(emptyFood()), draft.foods[draft.foods.length - 1]);
+  Object.assign(row, { name: r.name, qty: "1", mode: "u", unit: food.unit, auto: true });
+  renderDraft();
+}
+
 /* ---------- Bilan du repas : note sur 100, analyse, recommandations ---------- */
 
 const zeroTotals = () => ({ kcal: 0, protein: 0, carbs: 0, fat: 0 });
@@ -1367,7 +1525,7 @@ async function requestReview(id) {
 /* ---------- Export / import ---------- */
 
 function exportData() {
-  const data = { app: "assiette", version: 1, exportedAt: new Date().toISOString(), profile: state.profile, meals: state.meals, weights: state.weights };
+  const data = { app: "assiette", version: 1, exportedAt: new Date().toISOString(), profile: state.profile, meals: state.meals, weights: state.weights, recipes: state.recipes };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -1386,7 +1544,8 @@ async function importData(file) {
     state.profile = data.profile;
     state.meals = data.meals;
     state.weights = Array.isArray(data.weights) ? data.weights : [];
-    saveProfile(); saveMeals(); saveWeights();
+    state.recipes = Array.isArray(data.recipes) ? data.recipes : [];
+    saveProfile(); saveMeals(); saveWeights(); saveRecipes();
     state.tab = "today";
     render();
     toast("Sauvegarde restaurée.");
@@ -1429,13 +1588,13 @@ document.addEventListener("click", async (e) => {
     case "toggle-unit": toggleUnit(+el.dataset.i); break;
     case "add-food":
       draft.foods.push(emptyFood());
-      renderDraft();
+      renderSheet();
       $(`input[data-food="${draft.foods.length - 1}"][data-k="name"]`)?.focus();
       break;
     case "del-food":
       draft.foods.splice(+el.dataset.i, 1);
       if (!draft.foods.length) draft.foods.push(emptyFood());
-      renderDraft();
+      renderSheet();
       break;
     case "add-item": draft.items.push({ ...normalizeItem({ name: "" }), mode: "g" }); renderDraft(); break;
     case "item-unit": toggleItemUnit(+el.dataset.i); break;
@@ -1483,6 +1642,16 @@ document.addEventListener("click", async (e) => {
         saveProfile(); render();
       }
       break;
+    case "new-recipe": openRecipe(null); break;
+    case "edit-recipe": openRecipe(el.dataset.id); break;
+    case "save-recipe": saveRecipe(); break;
+    case "delete-recipe":
+      if (confirm("Supprimer cette recette ? Les repas déjà enregistrés ne changent pas.")) {
+        state.recipes = state.recipes.filter((r) => r.id !== draft.id);
+        saveRecipes(); closeSheet(); render();
+      }
+      break;
+    case "add-recipe": addRecipeToMeal(el.dataset.id); break;
     case "reset-targets": delete state.profile.custom; saveProfile(); render(); break;
     case "share":
       try {
@@ -1494,8 +1663,8 @@ document.addEventListener("click", async (e) => {
     case "import": $("#file-import").click(); break;
     case "wipe":
       if (confirm("Effacer définitivement ton profil, tes repas et tes pesées sur cet appareil ?")) {
-        state.profile = null; state.meals = []; state.weights = [];
-        saveProfile(); saveMeals(); saveWeights();
+        state.profile = null; state.meals = []; state.weights = []; state.recipes = [];
+        saveProfile(); saveMeals(); saveWeights(); saveRecipes();
         render();
       }
       break;
@@ -1526,7 +1695,15 @@ document.addEventListener("submit", (e) => {
 });
 
 // Suggestions d'aliments pour les champs « Aliment ».
-document.body.insertAdjacentHTML("beforeend", `<datalist id="food-list">${FOOD_TABLE.map((f) => `<option value="${esc(f.name)}"></option>`).join("")}</datalist>`);
+function refreshFoodList() {
+  let list = $("#food-list");
+  if (!list) {
+    document.body.insertAdjacentHTML("beforeend", `<datalist id="food-list"></datalist>`);
+    list = $("#food-list");
+  }
+  list.innerHTML = [...state.recipes.map((r) => r.name), ...FOOD_TABLE.map((f) => f.name)].map((n) => `<option value="${esc(n)}"></option>`).join("");
+}
+refreshFoodList();
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
