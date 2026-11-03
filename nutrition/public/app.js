@@ -789,7 +789,7 @@ function renderDraft(loading = false) {
   openSheet(`
     ${head}
     ${d.image ? `<img class="preview" src="${d.image}" alt="">` : ""}
-    ${d.id ? (d.review ? reviewCard(d.review) : `<button class="btn block" style="margin-bottom:12px" data-act="retry-review" data-id="${d.id}">Obtenir la note du repas</button>`) : ""}
+    ${d.id ? (d.review ? reviewCard(d.review, mealTotals(d)) : `<button class="btn block" style="margin-bottom:12px" data-act="retry-review" data-id="${d.id}">Obtenir la note du repas</button>`) : ""}
     <label class="field"><span>Nom du repas</span><input data-draft="name" value="${esc(d.name)}" maxlength="60"></label>
     <div class="grid-2">
       <label class="field"><span>Repas</span>${typeSelect(d.type)}</label>
@@ -1187,21 +1187,28 @@ function reviewPayload(meal) {
 
 const GOAL_NAMES = { cut: "sèche", bulk: "prise de masse sèche", maintain: "maintien" };
 
-// Détail des points par critère, selon le barème de l'objectif.
-function breakdownBlock(r) {
+// Détail par critère, selon le barème de l'objectif. Les protéines et les calories
+// affichent le total du repas ; les autres critères, leurs points.
+function critValue(c, totals) {
+  if (totals && c.key === "protein") return `${round(totals.protein)} g`;
+  if (totals && c.key === "calories") return `${round(totals.kcal)} kcal`;
+  return `${c.points} / ${c.max}`;
+}
+
+function breakdownBlock(r, totals) {
   if (!Array.isArray(r.breakdown) || !r.breakdown.length) return "";
   return `
     <div class="breakdown">
       ${r.breakdown.map((c) => `
         <div class="crit">
-          <div class="macro-head"><span>${esc(c.label)}</span><b>${c.points} / ${c.max}</b></div>
+          <div class="macro-head"><span>${esc(c.label)}</span><b>${critValue(c, totals)}</b></div>
           <div class="bar"><i style="width:${c.max ? (c.points / c.max) * 100 : 0}%;background:${scoreColor((c.points / c.max) * 100)}"></i></div>
         </div>`).join("")}
       ${r.goal ? `<p class="small muted" style="margin:6px 0 0">Barème « ${GOAL_NAMES[r.goal] || r.goal} »</p>` : ""}
     </div>`;
 }
 
-function reviewCard(r) {
+function reviewCard(r, totals) {
   const recos = r.recommendations || [];
   return `
     <div class="card review">
@@ -1209,7 +1216,7 @@ function reviewCard(r) {
         <div class="score" style="--c:${scoreColor(r.score)}"><b>${r.score}</b><span>/100</span></div>
         <strong>${esc(r.title)}</strong>
       </div>
-      ${breakdownBlock(r)}
+      ${breakdownBlock(r, totals)}
       <p class="small">${esc(r.analysis)}</p>
       ${recos.length ? `<p class="small muted" style="margin:12px 0 4px">Recommandations</p><ul class="recos small">${recos.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
     </div>`;
@@ -1222,7 +1229,7 @@ function reviewSheet(meal, status = "done", message = "") {
   if (status === "loading") return `${head}<div class="card center"><div class="spinner"></div><p>Analyse du repas…</p><p class="small muted">Note sur 100 et conseils pour la suite de ta journée.</p></div>`;
   if (status === "error") return `${head}<div class="card"><p>${esc(message)}</p><button class="btn block" data-act="retry-review" data-id="${meal.id}">Réessayer</button></div>
     <button class="btn block" data-act="close">Fermer</button>`;
-  return `${head}${reviewCard(meal.review)}
+  return `${head}${reviewCard(meal.review, t)}
     <button class="btn primary block" data-act="close">Fermer</button>
     <p class="center"><button class="link" data-act="edit-meal" data-id="${meal.id}">Voir ou modifier le repas</button></p>`;
 }
