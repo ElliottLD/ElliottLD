@@ -421,6 +421,7 @@ function mealRow(m) {
         <strong>${esc(m.name || "Repas")}</strong>
         <span class="small muted">${MEAL_TYPES[m.type] || "Repas"} · ${time} · P ${round(t.protein)} · G ${round(t.carbs)} · L ${round(t.fat)}</span>
       </div>
+      ${m.review ? `<span class="score-pill" style="background:${scoreColor(m.review.score)}" title="Note du repas">${m.review.score}</span>` : ""}
       <div class="meal-kcal"><strong>${round(t.kcal)}</strong><span class="small muted">kcal</span></div>
     </div>`;
 }
@@ -604,6 +605,7 @@ let draft = null;
 function openSheet(html) {
   const sheet = $("#sheet");
   sheet.innerHTML = `<div class="sheet-inner">${html}</div>`;
+  sheet.dataset.review = "";
   sheet.hidden = false;
   sheet.scrollTop = 0;
   document.body.style.overflow = "hidden";
@@ -787,6 +789,7 @@ function renderDraft(loading = false) {
   openSheet(`
     ${head}
     ${d.image ? `<img class="preview" src="${d.image}" alt="">` : ""}
+    ${d.id ? (d.review ? reviewCard(d.review) : `<button class="btn block" style="margin-bottom:12px" data-act="retry-review" data-id="${d.id}">Obtenir la note du repas</button>`) : ""}
     <label class="field"><span>Nom du repas</span><input data-draft="name" value="${esc(d.name)}" maxlength="60"></label>
     <div class="grid-2">
       <label class="field"><span>Repas</span>${typeSelect(d.type)}</label>
@@ -799,7 +802,7 @@ function renderDraft(loading = false) {
       ${d.items.length ? d.items.map(itemRow).join("") : `<p class="muted small">Aucun aliment. Ajoute-en un ci-dessous.</p>`}
     </div>
     <button class="btn block" data-act="add-item">+ Ajouter un aliment</button>
-    <p class="small muted" style="margin:10px 0 16px">Modifie les grammes : les calories et macros s'ajustent automatiquement.</p>
+    <p class="small muted" style="margin:10px 0 16px">Change le nom ou la quantité d'un aliment : les valeurs se recalculent avec la table intégrée, ou l'IA les recherche si l'aliment n'y est pas.</p>
     <button class="btn primary block" data-act="save-meal">Enregistrer</button>
     ${d.id ? `<button class="btn danger block" style="margin-top:10px" data-act="delete-meal">Supprimer ce repas</button>` : ""}`);
 }
@@ -814,17 +817,73 @@ function draftTotals(t) {
     </div>`;
 }
 
-// « ≈ 2 œufs » sous un aliment qui se compte, pour lire les grammes plus facilement.
-function itemUnitHint(it) {
-  const food = findFood(it.name);
-  if (!food?.unit || !(it.grams > 0)) return "";
-  const n = Math.round((it.grams / food.unit.g) * 2) / 2;
-  return n ? `≈ ${String(n).replace(".", ",")} ${unitLabel(food.unit, n)}` : "";
+/* Aliments de l'écran du résultat.
+   Chaque aliment garde son poids en grammes et la source de ses valeurs :
+   "table" (table intégrée), "ai" (estimé par l'IA pour ce nom), "manual" (saisi à la main)
+   ou "pending" (nom inconnu, l'IA l'estimera quand le nom est validé).
+   Un aliment qui se compte peut s'afficher en unités (mode "u") : œufs, tranches, pots… */
+const MACROS = ["kcal", "protein", "carbs", "fat"];
+const SOURCES = {
+  table: ["src-table", "Table"],
+  ai: ["src-ai", "IA"],
+  manual: ["src-manual", "Modifié"],
+  pending: ["src-pending", "À estimer"],
+  loading: ["src-pending", "Recherche…"],
+};
+
+function itemUnit(it) {
+  return it.mode === "u" ? findFood(it.name)?.unit || null : null;
 }
 
-function refreshItemHint(i) {
-  const el = $(`[data-ihint="${i}"]`);
-  if (el && draft.items[i]) el.textContent = itemUnitHint(draft.items[i]);
+function itemQty(it) {
+  const unit = itemUnit(it);
+  return unit ? Math.round((it.grams / unit.g) * 100) / 100 : round(it.grams);
+}
+
+// Remplace les valeurs d'un aliment par celles de la table, pour son poids actuel.
+function applyTable(it, food) {
+  let grams = it.grams > 0 ? it.grams : defaultGrams(food);
+  if (food.unit) {
+    if (it.mode !== "g") {
+      // Arrondi à la demi-unité : « 2 œufs » plutôt que 1,96 œuf.
+      grams = Math.max(0.5, Math.round((grams / food.unit.g) * 2) / 2) * food.unit.g;
+      it.mode = "u";
+    }
+  } else {
+    it.mode = "g";
+  }
+  Object.assign(it, foodValues(food, grams, it.name), { src: "table", per: null });
+}
+
+function tableItem(food, grams, mode = food.unit ? "u" : "g") {
+  const it = { name: food.name, grams, mode, src: "table" };
+  Object.assign(it, foodValues(food, grams));
+  return it;
+}
+
+function itemHint(it) {
+  if (it.src === "loading") return "L'IA recherche les valeurs de cet aliment…";
+  if (it.src === "pending") return "Pas dans la table : l'IA estimera les valeurs dès que tu valides le nom.";
+  const unit = itemUnit(it);
+  if (unit) return `≈ ${round(it.grams)} g`;
+  const food = findFood(it.name);
+  if (food?.unit && it.grams > 0) {
+    const n = Math.round((it.grams / food.unit.g) * 2) / 2;
+    if (n) return `≈ ${String(n).replace(".", ",")} ${unitLabel(food.unit, n)}`;
+  }
+  return "";
+}
+
+function itemUnitButton(it, i) {
+  const food = findFood(it.name);
+  if (!food?.unit || it.src === "pending" || it.src === "loading") return `<span class="unit-btn static" data-iunit="${i}">g</span>`;
+  const label = it.mode === "u" ? unitLabel(food.unit, itemQty(it)) : "g";
+  return `<button type="button" class="unit-btn" data-act="item-unit" data-i="${i}" data-iunit="${i}" title="Changer d'unité">${esc(label)} ⇄</button>`;
+}
+
+function srcBadge(it, i) {
+  const s = SOURCES[it.src];
+  return s ? `<span class="badge ${s[0]}" data-isrc="${i}">${s[1]}</span>` : `<span data-isrc="${i}"></span>`;
 }
 
 function itemRow(it, i) {
@@ -832,13 +891,38 @@ function itemRow(it, i) {
   return `
     <div class="item">
       <div class="item-top">
-        <input class="name" list="food-list" data-item="${i}" data-k="name" value="${esc(it.name)}" placeholder="Aliment" autocomplete="off">
-        <div class="grams"><input type="number" inputmode="decimal" step="any" min="0" data-item="${i}" data-k="grams" value="${round(it.grams)}"></div>
+        <input class="name" list="food-list" data-item="${i}" data-k="name" value="${esc(it.name)}" placeholder="Aliment" autocomplete="off" autocapitalize="off">
         <button class="item-del" data-act="del-item" data-i="${i}" aria-label="Retirer">✕</button>
       </div>
-      <p class="food-hint small muted" data-ihint="${i}">${itemUnitHint(it)}</p>
+      <div class="food-qty">
+        <input type="number" inputmode="decimal" step="any" min="0" data-item="${i}" data-k="qty" value="${itemQty(it)}" aria-label="Quantité">
+        ${itemUnitButton(it, i)}
+        ${srcBadge(it, i)}
+      </div>
+      <p class="food-hint small muted" data-ihint="${i}">${itemHint(it)}</p>
       <div class="item-macros">${f("kcal", "kcal")}${f("protein", "prot.")}${f("carbs", "gluc.")}${f("fat", "lip.")}</div>
     </div>`;
+}
+
+// Met à jour une ligne sans la reconstruire, pour ne pas perdre le champ en cours de saisie.
+function refreshItemRow(i) {
+  const it = draft?.items[i];
+  if (!it) return;
+  const set = (sel, value) => {
+    const el = $(sel);
+    if (el && el !== document.activeElement) el.value = value;
+  };
+  set(`input[data-item="${i}"][data-k="name"]`, it.name);
+  set(`input[data-item="${i}"][data-k="qty"]`, itemQty(it));
+  for (const m of MACROS) set(`input[data-item="${i}"][data-k="${m}"]`, round1(it[m]));
+  const unit = $(`[data-iunit="${i}"]`);
+  if (unit) unit.outerHTML = itemUnitButton(it, i);
+  const src = $(`[data-isrc="${i}"]`);
+  if (src) src.outerHTML = srcBadge(it, i);
+  const hint = $(`[data-ihint="${i}"]`);
+  if (hint) hint.textContent = itemHint(it);
+  const totals = $("#draft-totals");
+  if (totals) totals.innerHTML = draftTotals(mealTotals(draft));
 }
 
 function normalizeItem(raw) {
@@ -850,7 +934,109 @@ function normalizeItem(raw) {
     carbs: Math.max(0, +raw.carbs || 0),
     fat: Math.max(0, +raw.fat || 0),
   };
+  if (["table", "ai", "manual"].includes(raw.src)) it.src = raw.src;
+  if (raw.mode === "u" || raw.mode === "g") it.mode = raw.mode;
+  if (raw.aiName) it.aiName = String(raw.aiName).slice(0, 60);
   return it;
+}
+
+// Aliment renvoyé par l'IA : valeurs de la table si on le connaît, sinon celles de l'IA.
+function fromAi(raw) {
+  const it = normalizeItem(raw);
+  const food = findFood(it.name);
+  if (food) {
+    applyTable(it, food);
+  } else {
+    it.src = "ai";
+    it.aiName = it.name;
+    it.mode = "g";
+  }
+  return it;
+}
+
+/* Édition en direct d'un aliment. */
+function onItemInput(el) {
+  const i = +el.dataset.item;
+  const k = el.dataset.k;
+  const it = draft.items[i];
+  if (!it) return;
+  if (k === "name") {
+    it.name = el.value;
+    const food = findFood(it.name);
+    if (food) applyTable(it, food);
+    else if (it.aiName && normalizeFoodName(it.aiName) === normalizeFoodName(it.name)) it.src = "ai";
+    else if (it.name.trim() && it.src !== "manual") {
+      if (it.mode === "u") it.mode = "g";
+      it.src = "pending";
+    }
+    refreshItemRow(i);
+    return;
+  }
+  const v = Math.max(0, parseFloat(el.value.replace(",", ".")) || 0);
+  if (k === "qty") {
+    const unit = itemUnit(it);
+    const grams = unit ? v * unit.g : v;
+    const food = findFood(it.name);
+    if (it.src === "table" && food) {
+      Object.assign(it, foodValues(food, grams, it.name));
+    } else {
+      // Valeurs par gramme mémorisées, pour qu'un champ vidé puis retapé ne remette pas tout à zéro.
+      if (!it.per && it.grams > 0) it.per = Object.fromEntries(MACROS.map((m) => [m, it[m] / it.grams]));
+      if (it.per) for (const m of MACROS) it[m] = it.per[m] * grams;
+      it.grams = grams;
+    }
+  } else {
+    it[k] = v;
+    it.src = "manual";
+    it.per = null;
+  }
+  refreshItemRow(i);
+}
+
+function toggleItemUnit(i) {
+  const it = draft.items[i];
+  if (!it || !findFood(it.name)?.unit) return;
+  it.mode = it.mode === "u" ? "g" : "u";
+  refreshItemRow(i);
+}
+
+// Nom validé mais inconnu de la table : l'IA estime cet aliment pour la quantité indiquée.
+function lookupItem(i) {
+  const d = draft;
+  const it = d?.items[i];
+  if (!it || it.src !== "pending" || !it.name.trim()) return;
+  const name = it.name.trim();
+  const token = uid();
+  it.lookup = token;
+  it.src = "loading";
+  refreshItemRow(i);
+  const done = (async () => {
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-access-key": ACCESS_KEY },
+        body: JSON.stringify({ note: `Estime uniquement cet aliment, sans rien ajouter : ${name}${it.grams > 0 ? ` : ${round(it.grams)} g` : " (portion habituelle)"}` }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Recherche impossible.");
+      const found = (data.items || []).map(normalizeItem).filter((x) => x.grams > 0);
+      if (!found.length) throw new Error(data.comment || "Aliment non reconnu : saisis les valeurs à la main.");
+      if (draft !== d || it.lookup !== token) return;
+      // Plusieurs lignes possibles (ex. un plat) : on les additionne, ramenées au poids saisi.
+      const sum = found.reduce((a, x) => ({ grams: a.grams + x.grams, kcal: a.kcal + x.kcal, protein: a.protein + x.protein, carbs: a.carbs + x.carbs, fat: a.fat + x.fat }), { grams: 0, kcal: 0, protein: 0, carbs: 0, fat: 0 });
+      const grams = it.grams > 0 ? it.grams : sum.grams;
+      for (const m of MACROS) it[m] = (sum[m] / sum.grams) * grams;
+      Object.assign(it, { grams, src: "ai", aiName: name, per: null, mode: "g" });
+    } catch (err) {
+      if (draft !== d || it.lookup !== token) return;
+      it.src = "manual";
+      toast(navigator.onLine ? err.message : "Pas de connexion internet.");
+    }
+    delete it.lookup;
+    refreshItemRow(d.items.indexOf(it));
+  })();
+  d.pending = (d.pending || new Set()).add(done);
+  done.finally(() => d.pending.delete(done));
 }
 
 async function resizeImage(file, max = 1280) {
@@ -900,7 +1086,7 @@ async function analyze() {
   const unknown = [];
   for (const f of named) {
     const food = findFood(f.name);
-    if (food && rowGrams(f) > 0) local.push(normalizeItem(foodValues(food, rowGrams(f))));
+    if (food && rowGrams(f) > 0) local.push(tableItem(food, rowGrams(f), f.mode === "u" && food.unit ? "u" : "g"));
     else unknown.push(f);
   }
   if (!d.image && !unknown.length) {
@@ -930,7 +1116,7 @@ async function analyze() {
       renderDraft();
       return;
     }
-    const ai = data.items.map(normalizeItem);
+    const ai = data.items.map(fromAi);
     d.items = d.image ? ai : [...local, ...ai];
     d.name = d.image ? data.meal_name || "Repas" : mealNameFrom(named);
     d.comment = data.comment || "";
@@ -944,11 +1130,22 @@ async function analyze() {
   }
 }
 
-function saveDraft() {
+async function saveDraft() {
   const d = draft;
+  d.items.forEach((it, i) => { if (it.src === "pending") lookupItem(i); });
+  if (d.pending?.size) {
+    const btn = $('[data-act="save-meal"]');
+    if (btn) { btn.disabled = true; btn.textContent = "Calcul des valeurs…"; }
+    await Promise.allSettled([...d.pending]);
+    if (draft !== d) return;
+  }
   const items = d.items.map(normalizeItem).filter((it) => it.name || it.kcal);
-  if (!items.length) { toast("Ajoute au moins un aliment."); return; }
+  if (!items.length) { toast("Ajoute au moins un aliment."); renderDraft(); return; }
   const meal = { id: d.id || uid(), date: d.date, time: d.time, type: d.type, name: d.name.trim() || "Repas", items, comment: d.comment, confidence: d.confidence };
+  // Le bilan n'est refait que si le contenu du repas a changé.
+  const old = d.id ? state.meals.find((m) => m.id === d.id) : null;
+  const changed = !old?.review || JSON.stringify(old.items) !== JSON.stringify(items) || old.type !== meal.type || old.date !== meal.date;
+  if (!changed) meal.review = old.review;
   if (d.id) state.meals = state.meals.map((m) => (m.id === d.id ? meal : m));
   else state.meals.push(meal);
   saveMeals();
@@ -956,48 +1153,90 @@ function saveDraft() {
   state.tab = "today";
   closeSheet();
   render();
-  toast(`${round(mealTotals(meal).kcal)} kcal ajoutées.`);
+  if (changed) requestReview(meal.id);
+  else toast("Repas mis à jour.");
 }
 
-/* Édition en direct d'un aliment : les grammes recalculent les macros au prorata. */
-function onItemInput(el) {
-  const i = +el.dataset.item;
-  const k = el.dataset.k;
-  const it = draft.items[i];
-  if (!it) return;
-  if (k === "name") {
-    it.name = el.value;
-    const food = findFood(el.value);
-    if (food && !it.kcal && !it.protein && !it.carbs && !it.fat) {
-      const v = foodValues(food, it.grams || defaultGrams(food));
-      Object.assign(it, { grams: v.grams, kcal: v.kcal, protein: v.protein, carbs: v.carbs, fat: v.fat, _per: null });
-      for (const m of ["grams", "kcal", "protein", "carbs", "fat"]) {
-        const input = $(`input[data-item="${i}"][data-k="${m}"]`);
-        if (input) input.value = m === "grams" ? round(it[m]) : round1(it[m]);
-      }
-      $("#draft-totals").innerHTML = draftTotals(mealTotals(draft));
-    }
-    refreshItemHint(i);
-    return;
+/* ---------- Bilan du repas : note sur 100, analyse, recommandations ---------- */
+
+const zeroTotals = () => ({ kcal: 0, protein: 0, carbs: 0, fat: 0 });
+const addTotals = (a, b) => ({ kcal: a.kcal + b.kcal, protein: a.protein + b.protein, carbs: a.carbs + b.carbs, fat: a.fat + b.fat });
+
+function scoreColor(score) {
+  return score >= 80 ? "var(--accent)" : score >= 60 ? "var(--carbs)" : "var(--over)";
+}
+
+function reviewPayload(meal) {
+  const p = state.profile;
+  const t = targets();
+  const earlier = state.meals.filter((m) => m.date === meal.date && m.id !== meal.id && m.time <= meal.time);
+  const before = earlier.map(mealTotals).reduce(addTotals, zeroTotals());
+  const totals = mealTotals(meal);
+  return {
+    meal: {
+      name: meal.name,
+      type: MEAL_TYPES[meal.type] || "Repas",
+      time: new Date(meal.time).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
+      items: meal.items.map(({ name, grams, kcal, protein, carbs, fat }) => ({ name, grams, kcal, protein, carbs, fat })),
+      totals,
+    },
+    day: { targets: { kcal: t.kcal, protein: t.protein, carbs: t.carbs, fat: t.fat }, before, after: addTotals(before, totals), mealsBefore: earlier.length },
+    profile: { mode: computeTargets(p).mode, sex: p.sex, age: p.age, weight: p.weight, goalWeight: p.goalWeight },
+  };
+}
+
+function reviewCard(r) {
+  const recos = r.recommendations || [];
+  return `
+    <div class="card review">
+      <div class="review-head">
+        <div class="score" style="--c:${scoreColor(r.score)}"><b>${r.score}</b><span>/100</span></div>
+        <strong>${esc(r.title)}</strong>
+      </div>
+      <p class="small">${esc(r.analysis)}</p>
+      ${recos.length ? `<p class="small muted" style="margin:12px 0 4px">Recommandations</p><ul class="recos small">${recos.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+    </div>`;
+}
+
+function reviewSheet(meal, status = "done", message = "") {
+  const t = mealTotals(meal);
+  const head = `<div class="sheet-head"><h1>Bilan du repas</h1><button class="close" data-act="close" aria-label="Fermer">✕</button></div>
+    <p class="small muted">${esc(meal.name)} · ${round(t.kcal)} kcal · P ${round(t.protein)} g · G ${round(t.carbs)} g · L ${round(t.fat)} g</p>`;
+  if (status === "loading") return `${head}<div class="card center"><div class="spinner"></div><p>Analyse du repas…</p><p class="small muted">Note sur 100 et conseils pour la suite de ta journée.</p></div>`;
+  if (status === "error") return `${head}<div class="card"><p>${esc(message)}</p><button class="btn block" data-act="retry-review" data-id="${meal.id}">Réessayer</button></div>
+    <button class="btn block" data-act="close">Fermer</button>`;
+  return `${head}${reviewCard(meal.review)}
+    <button class="btn primary block" data-act="close">Fermer</button>
+    <p class="center"><button class="link" data-act="edit-meal" data-id="${meal.id}">Voir ou modifier le repas</button></p>`;
+}
+
+async function requestReview(id) {
+  const meal = state.meals.find((m) => m.id === id);
+  if (!meal) return;
+  draft = null;
+  const show = (html) => {
+    openSheet(html);
+    $("#sheet").dataset.review = id;
+  };
+  const stillOpen = () => !$("#sheet").hidden && $("#sheet").dataset.review === id;
+  show(reviewSheet(meal, "loading"));
+  try {
+    const res = await fetch("/api/review", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-access-key": ACCESS_KEY },
+      body: JSON.stringify(reviewPayload(meal)),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Bilan impossible, réessaie.");
+    const fresh = state.meals.find((m) => m.id === id);
+    if (!fresh) return;
+    fresh.review = { score: data.score, title: data.title, analysis: data.analysis, recommendations: data.recommendations, at: Date.now() };
+    saveMeals();
+    if (stillOpen()) show(reviewSheet(fresh));
+    render();
+  } catch (err) {
+    if (stillOpen()) show(reviewSheet(meal, "error", navigator.onLine ? err.message : "Pas de connexion internet."));
   }
-  const v = Math.max(0, parseFloat(el.value.replace(",", ".")) || 0);
-  const MACROS = ["kcal", "protein", "carbs", "fat"];
-  if (k === "grams") {
-    // Valeurs par gramme mémorisées, pour qu'un champ vidé puis retapé ne remette pas tout à zéro.
-    if (!it._per && it.grams > 0) it._per = Object.fromEntries(MACROS.map((m) => [m, it[m] / it.grams]));
-    if (it._per) {
-      for (const m of MACROS) {
-        it[m] = it._per[m] * v;
-        const input = $(`input[data-item="${i}"][data-k="${m}"]`);
-        if (input) input.value = round1(it[m]);
-      }
-    }
-  } else {
-    it._per = null;
-  }
-  it[k] = v;
-  if (k === "grams") refreshItemHint(i);
-  $("#draft-totals").innerHTML = draftTotals(mealTotals(draft));
 }
 
 /* ---------- Export / import ---------- */
@@ -1055,7 +1294,7 @@ document.addEventListener("click", async (e) => {
     case "manual": {
       const named = namedFoods(draft);
       draft.items = named.length
-        ? named.map((f) => { const food = findFood(f.name); return normalizeItem(food && rowGrams(f) > 0 ? foodValues(food, rowGrams(f)) : { name: f.name, grams: rowGrams(f) }); })
+        ? named.map((f) => { const food = findFood(f.name); return food && rowGrams(f) > 0 ? tableItem(food, rowGrams(f), f.mode === "u" && food.unit ? "u" : "g") : { ...normalizeItem({ name: f.name, grams: rowGrams(f) }), src: "manual", mode: "g" }; })
         : [normalizeItem({ name: "" })];
       draft.name = mealNameFrom(named);
       draft.analyzed = true;
@@ -1073,7 +1312,9 @@ document.addEventListener("click", async (e) => {
       if (!draft.foods.length) draft.foods.push(emptyFood());
       renderDraft();
       break;
-    case "add-item": draft.items.push(normalizeItem({ name: "" })); renderDraft(); break;
+    case "add-item": draft.items.push({ ...normalizeItem({ name: "" }), mode: "g" }); renderDraft(); break;
+    case "item-unit": toggleItemUnit(+el.dataset.i); break;
+    case "retry-review": requestReview(el.dataset.id); break;
     case "del-item": draft.items.splice(+el.dataset.i, 1); renderDraft(); break;
     case "save-meal": saveDraft(); break;
     case "delete-meal":
@@ -1125,6 +1366,7 @@ document.addEventListener("input", (e) => {
 
 document.addEventListener("change", (e) => {
   const el = e.target;
+  if (el.dataset.item !== undefined && el.dataset.k === "name" && draft) lookupItem(+el.dataset.item);
   if (el.id === "file-camera" || el.id === "file-gallery") { onPhoto(el.files[0]); el.value = ""; }
   if (el.id === "file-import" && el.files[0]) { importData(el.files[0]); el.value = ""; }
 });
