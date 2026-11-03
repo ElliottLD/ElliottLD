@@ -109,23 +109,31 @@ const PACE = [
   { v: 0.5, label: "Recommandé — 0,5 kg / semaine" },
   { v: 0.75, label: "Rapide — 0,75 kg / semaine" },
 ];
+// Prise de poids : lent pour prendre surtout du muscle et rester sec.
+const GAIN_PACE = [
+  { v: 0.1, label: "Très sec — 0,1 kg / semaine" },
+  { v: 0.25, label: "Recommandé — 0,25 kg / semaine" },
+  { v: 0.4, label: "Rapide — 0,4 kg / semaine" },
+];
+
+function direction(weight, goalWeight) {
+  const diff = weight - goalWeight;
+  return diff > 0.5 ? "cut" : diff < -0.5 ? "bulk" : "maintain";
+}
 
 function computeTargets(p) {
   const bmr = 10 * p.weight + 6.25 * p.height - 5 * p.age + (p.sex === "f" ? -161 : 5);
   const tdee = bmr * p.activity;
-  const diff = p.weight - p.goalWeight;
-  let mode = "maintain";
+  const mode = direction(p.weight, p.goalWeight);
   let kcal = tdee;
-  if (diff > 0.5) {
-    mode = "cut";
-    const deficit = Math.min((p.pace * 7700) / 7, tdee * 0.25);
+  if (mode === "cut") {
+    const deficit = Math.min(((p.pace || 0.5) * 7700) / 7, tdee * 0.25);
     kcal = Math.max(tdee - deficit, p.sex === "f" ? 1200 : 1500);
-  } else if (diff < -0.5) {
-    mode = "bulk";
-    kcal = tdee + 250;
+  } else if (mode === "bulk") {
+    kcal = tdee + Math.min(((p.gainPace || 0.25) * 7700) / 7, 500);
   }
-  // Sèche : protéines hautes pour garder le muscle.
-  let protein = mode === "cut" ? 2 * p.goalWeight : 1.8 * p.weight;
+  // Protéines hautes en sèche (garder le muscle) comme en prise (en construire).
+  let protein = mode === "cut" ? 2 * p.goalWeight : mode === "bulk" ? 2 * p.weight : 1.8 * p.weight;
   protein = Math.min(protein, (kcal * 0.35) / 4);
   const fat = Math.max(0.8 * Math.min(p.weight, p.goalWeight + 10), (kcal * 0.25) / 9);
   const carbs = Math.max(0, (kcal - protein * 4 - fat * 9) / 4);
@@ -218,6 +226,8 @@ function profileFields(p = {}) {
   const sex = p.sex || "m";
   const activity = p.activity || 1.55;
   const pace = p.pace || 0.5;
+  const gainPace = p.gainPace || 0.25;
+  const dir = p.weight && p.goalWeight ? direction(p.weight, p.goalWeight) : "cut";
   return `
     <label class="field"><span>Prénom ou pseudo (facultatif)</span><input name="name" value="${esc(p.name || "")}" maxlength="30" autocomplete="off"></label>
     <div class="field">
@@ -237,8 +247,11 @@ function profileFields(p = {}) {
     <label class="field"><span>Activité</span>
       <select name="activity">${ACTIVITY.map((a) => `<option value="${a.v}" ${a.v === activity ? "selected" : ""}>${a.label}</option>`).join("")}</select>
     </label>
-    <label class="field"><span>Rythme de perte (si tu veux perdre du poids)</span>
+    <label class="field" data-pace="cut" ${dir === "cut" ? "" : "hidden"}><span>Rythme de perte</span>
       <select name="pace">${PACE.map((a) => `<option value="${a.v}" ${a.v === pace ? "selected" : ""}>${a.label}</option>`).join("")}</select>
+    </label>
+    <label class="field" data-pace="bulk" ${dir === "bulk" ? "" : "hidden"}><span>Rythme de prise</span>
+      <select name="gainPace">${GAIN_PACE.map((a) => `<option value="${a.v}" ${a.v === gainPace ? "selected" : ""}>${a.label}</option>`).join("")}</select>
     </label>`;
 }
 
@@ -270,6 +283,7 @@ function readProfileForm(form) {
     goalWeight: num("goalWeight"),
     activity: num("activity"),
     pace: num("pace"),
+    gainPace: num("gainPace"),
   };
   const ok = [p.age, p.height, p.weight, p.goalWeight].every((n) => Number.isFinite(n) && n > 0);
   return ok ? p : null;
@@ -290,7 +304,10 @@ function modeText(t, p) {
     const weeks = Math.ceil((p.weight - p.goalWeight) / p.pace);
     return `Sèche : environ ${t.tdee - t.kcal} kcal sous ta maintenance (${t.tdee} kcal). Objectif atteint en ~${weeks} semaines si tu tiens le rythme.`;
   }
-  if (t.mode === "bulk") return `Prise de masse propre : +250 kcal au-dessus de ta maintenance (${t.tdee} kcal).`;
+  if (t.mode === "bulk") {
+    const weeks = Math.ceil((p.goalWeight - p.weight) / (p.gainPace || 0.25));
+    return `Prise de masse propre : environ ${t.kcal - t.tdee} kcal au-dessus de ta maintenance (${t.tdee} kcal). Objectif atteint en ~${weeks} semaines si tu tiens le rythme. Garde un œil sur ton tour de taille : s'il monte vite, ralentis.`;
+  }
   return `Maintien : ta dépense estimée est de ${t.tdee} kcal par jour.`;
 }
 
@@ -309,6 +326,8 @@ function bindProfileForm(form, isNew) {
     const box = $("#targets-preview", form);
     if (!box) return;
     const p = readProfileForm(form);
+    const dir = p ? direction(p.weight, p.goalWeight) : "cut";
+    $$("[data-pace]", form).forEach((el) => { el.hidden = el.dataset.pace !== dir; });
     if (!p) { box.innerHTML = ""; return; }
     const t = computeTargets(p);
     box.innerHTML = `<div class="card" style="background:var(--surface-2);border:0;box-shadow:none"><p class="small muted" style="margin-bottom:10px">Tes objectifs par jour</p>${targetsBlock(t)}<p class="small muted" style="margin:10px 0 0">${modeText(t, p)}</p></div>`;
