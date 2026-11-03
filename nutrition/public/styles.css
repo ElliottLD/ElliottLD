@@ -197,6 +197,8 @@ textarea { min-height: 76px; resize: vertical; }
 .score span { font-size: .7rem; color: var(--muted); }
 .breakdown { margin: 4px 0 12px; }
 .adapt { border-color: var(--accent); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.chip { border: 1px solid var(--accent); color: var(--accent); background: var(--surface); border-radius: 999px; padding: 8px 14px; font: inherit; font-size: .9rem; font-weight: 600; cursor: pointer; }
 .crit { margin-bottom: 8px; }
 .recos { margin: 0; padding-left: 18px; }
 .recos li { margin-bottom: 6px; }
