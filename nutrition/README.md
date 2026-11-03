@@ -29,3 +29,15 @@ public/sw.js          cache hors ligne de l'interface
 ## Calcul des objectifs
 
 Métabolisme de base Mifflin-St Jeor × niveau d'activité. En sèche : déficit selon le rythme choisi (7700 kcal par kg, plafonné à 25 % de la dépense), protéines à 2 g par kg de poids visé, lipides ≥ 25 % des calories, le reste en glucides. Chaque nouvelle pesée recalcule les objectifs. Ils peuvent aussi être fixés à la main.
+
+## Règles pour les mises à jour
+
+Les personnes qui utilisent l'appli ne doivent jamais avoir à la supprimer, la réinstaller ou perdre des données après une mise à jour. Toute modification respecte ces règles :
+
+1. **Changer `CACHE` dans `public/sw.js` à chaque mise en ligne** (`assiette-v11` → `assiette-v12`…). C'est ce qui déclenche la mise à jour automatique : quand l'appli revient au premier plan, elle détecte le nouveau service worker et se recharge toute seule (jamais pendant la saisie d'un repas ou d'une recette).
+2. **Rester compatible avec les données déjà stockées** (`localStorage` : `as_profile`, `as_meals`, `as_weights`, `as_recipes`) et avec les anciennes sauvegardes. Un nouveau champ a toujours une valeur par défaut quand il manque ; on ne renomme ni ne supprime une clé ou un champ existant sans code de migration.
+3. **Ne pas changer sans prévenir les utilisateurs**, car cela demande une action de leur part :
+   - l'adresse du site (les données sont liées à l'adresse : il faudrait exporter puis importer) ;
+   - la variable `APP_ACCESS_KEY` (il faudrait réinstaller l'appli avec le nouveau lien) ;
+   - l'icône ou le nom affiché sur l'écran d'accueil (iOS ne met pas à jour une icône déjà installée ; l'appli continue de fonctionner, seule l'ancienne icône reste).
+4. **Garder l'import des anciennes sauvegardes** : `readBackup()` accepte toutes les versions précédentes (`version` 1 sans recettes, `version` 2…) et vérifie le fichier avant de remplacer quoi que ce soit.

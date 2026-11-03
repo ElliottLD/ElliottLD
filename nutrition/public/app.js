@@ -372,7 +372,8 @@ function renderOnboarding() {
       ${profileFields()}
       <div id="targets-preview"></div>
       <button class="btn primary block" type="submit">C'est parti</button>
-    </form>`;
+    </form>
+    <p class="center"><button class="link" data-act="import">J'ai une sauvegarde : la restaurer</button></p>`;
 }
 
 function readProfileForm(form) {
@@ -703,6 +704,7 @@ function renderProfile() {
     <h2>Sauvegarde</h2>
     <div class="card">
       <p class="small">Tes données sont uniquement sur cet appareil. Exporte une sauvegarde de temps en temps, surtout avant de changer de téléphone.</p>
+      <p class="small muted">${lastExportText()}</p>
       <div class="btn-row">
         <button class="btn" data-act="export">Exporter</button>
         <button class="btn" data-act="import">Importer</button>
@@ -729,6 +731,7 @@ function closeSheet() {
   $("#sheet").innerHTML = "";
   document.body.style.overflow = "";
   draft = null;
+  if (typeof reloadIfIdle === "function") setTimeout(reloadIfIdle, 300);
 }
 
 function startAdd() {
@@ -1524,34 +1527,81 @@ async function requestReview(id) {
 
 /* ---------- Export / import ---------- */
 
-function exportData() {
-  const data = { app: "assiette", version: 1, exportedAt: new Date().toISOString(), profile: state.profile, meals: state.meals, weights: state.weights, recipes: state.recipes };
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+const BACKUP_VERSION = 2;
+
+async function exportData() {
+  const data = { app: "assiette", version: BACKUP_VERSION, exportedAt: new Date().toISOString(), profile: state.profile, meals: state.meals, weights: state.weights, recipes: state.recipes };
+  const name = `assiette-sauvegarde-${todayKey()}.json`;
+  const json = JSON.stringify(data, null, 2);
+  const done = () => { store.set("lastExport", Date.now()); render(); };
+  // Sur iPhone, depuis l'appli installée, le menu de partage (« Enregistrer dans Fichiers »)
+  // est plus fiable qu'un téléchargement.
+  const file = typeof File === "function" ? new File([json], name, { type: "application/json" }) : null;
+  if (file && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: "Sauvegarde Assiette" });
+      done();
+      toast("Sauvegarde enregistrée.");
+      return;
+    } catch (err) {
+      if (err?.name === "AbortError") return; // partage annulé
+    }
+  }
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `assiette-sauvegarde-${todayKey()}.json`;
+  a.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+  a.download = name;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  done();
+  toast("Sauvegarde téléchargée.");
+}
+
+// Vérifie une sauvegarde avant de remplacer quoi que ce soit : un fichier abîmé ne doit rien effacer.
+function readBackup(text) {
+  const data = JSON.parse(text);
+  const isObj = (x) => x && typeof x === "object" && !Array.isArray(x);
+  if (!isObj(data) || data.app !== "assiette" || !Array.isArray(data.meals)) throw new Error("Ce fichier n'est pas une sauvegarde Assiette.");
+  if (data.profile !== null && data.profile !== undefined) {
+    const p = data.profile;
+    if (!isObj(p) || ![p.weight, p.goalWeight, p.height, p.age].every((n) => Number.isFinite(+n) && +n > 0)) throw new Error("Profil illisible dans la sauvegarde.");
+  }
+  const meals = data.meals.filter((m) => isObj(m) && typeof m.date === "string" && Array.isArray(m.items));
+  const weights = (Array.isArray(data.weights) ? data.weights : []).filter((w) => isObj(w) && typeof w.date === "string" && Number.isFinite(+w.kg));
+  const recipes = (Array.isArray(data.recipes) ? data.recipes : []).filter((r) => isObj(r) && typeof r.name === "string" && Array.isArray(r.items));
+  return { profile: data.profile || null, meals, weights, recipes, exportedAt: data.exportedAt };
 }
 
 async function importData(file) {
+  let backup;
   try {
-    const data = JSON.parse(await file.text());
-    if (data.app !== "assiette" || !Array.isArray(data.meals)) throw new Error();
-    if (!confirm("Remplacer les données de cet appareil par cette sauvegarde ?")) return;
-    state.profile = data.profile;
-    state.meals = data.meals;
-    state.weights = Array.isArray(data.weights) ? data.weights : [];
-    state.recipes = Array.isArray(data.recipes) ? data.recipes : [];
-    saveProfile(); saveMeals(); saveWeights(); saveRecipes();
-    state.tab = "today";
-    render();
-    toast("Sauvegarde restaurée.");
-  } catch {
-    toast("Fichier de sauvegarde invalide.");
+    backup = readBackup(await file.text());
+  } catch (err) {
+    toast(err instanceof SyntaxError || !err.message ? "Fichier de sauvegarde illisible." : err.message);
+    return;
   }
+  const when = backup.exportedAt ? new Date(backup.exportedAt).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : "date inconnue";
+  const n = (count, word) => `${count} ${word}${count > 1 ? "s" : ""}`;
+  const summary = `${n(backup.meals.length, "repas").replace(/repass$/, "repas")}, ${n(backup.weights.length, "pesée")}, ${n(backup.recipes.length, "recette")} (sauvegarde du ${when})`;
+  const hasData = state.profile || state.meals.length || state.weights.length || state.recipes.length;
+  if (!confirm(hasData ? `Remplacer les données de cet appareil par cette sauvegarde ?\n${summary}` : `Restaurer cette sauvegarde ?\n${summary}`)) return;
+  state.profile = backup.profile;
+  state.meals = backup.meals;
+  state.weights = backup.weights;
+  state.recipes = backup.recipes;
+  saveProfile(); saveMeals(); saveWeights(); saveRecipes();
+  state.tab = "today";
+  state.day = todayKey();
+  render();
+  toast("Sauvegarde restaurée.");
+}
+
+function lastExportText() {
+  const t = store.get("lastExport", 0);
+  if (!t) return "Aucune sauvegarde faite depuis cet appareil.";
+  const days = Math.floor((Date.now() - t) / 86400000);
+  return `Dernière sauvegarde : ${days === 0 ? "aujourd'hui" : days === 1 ? "hier" : `il y a ${days} jours`}.`;
 }
 
 /* ---------- Évènements ---------- */
@@ -1705,8 +1755,32 @@ function refreshFoodList() {
 }
 refreshFoodList();
 
+/* ---------- Mises à jour automatiques ----------
+   Chaque nouvelle version change sw.js (nom du cache). Quand l'appli revient au premier plan,
+   on vérifie s'il y en a une ; le nouveau service worker prend la main, et on recharge la page
+   pour que tout le monde soit à jour sans fermer l'appli. Jamais pendant une saisie en cours. */
+let reloadPending = false;
+
+function reloadIfIdle() {
+  if (!reloadPending) return;
+  if (!$("#sheet").hidden) return; // un repas ou une recette est en cours de saisie : on attend
+  location.reload();
+}
+
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController) return; // première installation : la page est déjà à jour
+    reloadPending = true;
+    reloadIfIdle();
+  });
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").then((reg) => {
+      const check = () => reg.update().catch(() => {});
+      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") check(); });
+      setInterval(check, 30 * 60 * 1000);
+    }).catch(() => {});
+  });
 }
 
 render();
