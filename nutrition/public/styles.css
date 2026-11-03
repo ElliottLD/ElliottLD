@@ -186,6 +186,18 @@ textarea { min-height: 76px; resize: vertical; }
 .totals span { font-size: .75rem; color: var(--muted); }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .75rem; font-weight: 700; background: var(--surface-2); color: var(--muted); }
 .badge.low { color: var(--over); }
+.badge.src-table { color: var(--accent); }
+.badge.src-ai { color: var(--fat); }
+.badge.src-pending { color: var(--over); }
+.food-qty .badge { margin-left: auto; }
+.review-head { display: flex; gap: 14px; align-items: center; margin-bottom: 10px; }
+.review-head strong { font-size: 1.1rem; }
+.score { width: 72px; height: 72px; flex: none; border-radius: 50%; border: 5px solid var(--c); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.score b { font-size: 1.5rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.score span { font-size: .7rem; color: var(--muted); }
+.recos { margin: 0; padding-left: 18px; }
+.recos li { margin-bottom: 6px; }
+.score-pill { flex: none; min-width: 34px; height: 24px; padding: 0 7px; border-radius: 12px; color: #fff; font-size: .8rem; font-weight: 700; display: flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; }
 .badge.high { color: var(--accent); }
 .spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--accent); animation: spin 0.9s linear infinite; margin: 0 auto 12px; }
 @keyframes spin { to { transform: rotate(360deg); } }
