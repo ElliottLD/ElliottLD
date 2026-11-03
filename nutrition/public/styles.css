@@ -196,6 +196,7 @@ textarea { min-height: 76px; resize: vertical; }
 .score b { font-size: 1.5rem; line-height: 1; font-variant-numeric: tabular-nums; }
 .score span { font-size: .7rem; color: var(--muted); }
 .breakdown { margin: 4px 0 12px; }
+.adapt { border-color: var(--accent); }
 .crit { margin-bottom: 8px; }
 .recos { margin: 0; padding-left: 18px; }
 .recos li { margin-bottom: 6px; }
