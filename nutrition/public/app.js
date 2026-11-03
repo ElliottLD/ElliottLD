@@ -617,32 +617,53 @@ function startAdd() {
   renderDraft();
 }
 
-/* Lignes « aliment + grammes » saisies avant l'analyse. */
+/* Lignes « aliment + quantité » saisies avant l'analyse.
+   La quantité est en grammes (mode "g") ou en unités (mode "u" : œufs, tranches, pots…). */
 function emptyFood() {
-  return { name: "", grams: "", auto: false };
+  return { name: "", qty: "", mode: "g", unit: null, auto: false };
 }
 
 function namedFoods(d) {
   return d.foods.filter((f) => f.name.trim());
 }
 
+function rowGrams(f) {
+  const qty = +f.qty || 0;
+  return f.mode === "u" && f.unit ? qty * f.unit.g : qty;
+}
+
+function qtyText(f) {
+  const qty = +f.qty || 0;
+  return f.mode === "u" && f.unit ? `${qty} ${unitLabel(f.unit, qty)} (${round(rowGrams(f))} g)` : `${round(qty)} g`;
+}
+
 function foodHint(f) {
   if (!f.name.trim()) return "";
   const food = findFood(f.name);
   if (!food) return "Pas dans la table : l'IA estimera les valeurs.";
-  const grams = +f.grams || 0;
-  if (!grams) return "Indique les grammes.";
+  const grams = rowGrams(f);
+  if (!grams) return f.mode === "u" ? "Indique la quantité." : "Indique les grammes.";
   const v = foodValues(food, grams);
-  return `≈ ${round(v.kcal)} kcal · P ${round(v.protein)} g · G ${round(v.carbs)} g · L ${round(v.fat)} g`;
+  const weight = f.mode === "u" ? `${round(grams)} g · ` : "";
+  return `≈ ${weight}${round(v.kcal)} kcal · P ${round(v.protein)} g · G ${round(v.carbs)} g · L ${round(v.fat)} g`;
+}
+
+function unitButton(f, i) {
+  if (!f.unit) return `<span class="unit-btn static" data-unit="${i}">g</span>`;
+  const label = f.mode === "u" ? unitLabel(f.unit, +f.qty || 0) : "g";
+  return `<button type="button" class="unit-btn" data-act="toggle-unit" data-i="${i}" data-unit="${i}" title="Changer d'unité">${esc(label)} ⇄</button>`;
 }
 
 function foodRow(f, i) {
   return `
     <div class="food-row">
       <div class="item-top">
-        <input class="name" list="food-list" data-food="${i}" data-k="name" value="${esc(f.name)}" placeholder="Aliment (ex. riz basmati cuit)" autocomplete="off" autocapitalize="off">
-        <div class="grams"><input type="number" inputmode="decimal" step="any" min="0" data-food="${i}" data-k="grams" value="${esc(f.grams)}" placeholder="0"></div>
+        <input class="name" list="food-list" data-food="${i}" data-k="name" value="${esc(f.name)}" placeholder="Aliment (ex. œuf au plat, riz…)" autocomplete="off" autocapitalize="off">
         <button class="item-del" data-act="del-food" data-i="${i}" aria-label="Retirer">✕</button>
+      </div>
+      <div class="food-qty">
+        <input type="number" inputmode="decimal" step="any" min="0" data-food="${i}" data-k="qty" value="${esc(f.qty)}" placeholder="0" aria-label="Quantité">
+        ${unitButton(f, i)}
       </div>
       <p class="food-hint small muted" data-hint="${i}">${foodHint(f)}</p>
     </div>`;
@@ -651,7 +672,7 @@ function foodRow(f, i) {
 // « Calculer » quand tout est dans la table et sans photo (instantané, sans IA), sinon « Analyser ».
 function analyzeButtonState(d) {
   const named = namedFoods(d);
-  const localOnly = !d.image && named.length > 0 && named.every((f) => findFood(f.name) && +f.grams > 0);
+  const localOnly = !d.image && named.length > 0 && named.every((f) => findFood(f.name) && rowGrams(f) > 0);
   return { enabled: !!d.image || named.length > 0, label: localOnly ? "Calculer" : "Analyser" };
 }
 
@@ -663,6 +684,16 @@ function refreshAnalyzeButton() {
   btn.textContent = st.label;
 }
 
+function refreshFoodRow(i) {
+  const f = draft.foods[i];
+  const qty = $(`input[data-food="${i}"][data-k="qty"]`);
+  if (qty && qty !== document.activeElement) qty.value = f.qty;
+  const unit = $(`[data-unit="${i}"]`);
+  if (unit) unit.outerHTML = unitButton(f, i);
+  const hint = $(`[data-hint="${i}"]`);
+  if (hint) hint.textContent = foodHint(f);
+}
+
 function onFoodInput(el) {
   const i = +el.dataset.food;
   const f = draft.foods[i];
@@ -670,19 +701,41 @@ function onFoodInput(el) {
   if (el.dataset.k === "name") {
     f.name = el.value;
     const food = findFood(f.name);
-    // Aliment reconnu : on propose sa portion habituelle tant que la personne n'a pas tapé ses grammes.
-    if (food && (!f.grams || f.auto)) {
-      f.grams = String(food.portion);
-      f.auto = true;
-      const g = $(`input[data-food="${i}"][data-k="grams"]`);
-      if (g) g.value = f.grams;
+    if (food) {
+      // Aliment reconnu : on propose sa portion habituelle (en unités si l'aliment se compte),
+      // tant que la personne n'a pas tapé sa quantité elle-même.
+      if (!f.qty || f.auto) {
+        f.unit = food.unit;
+        f.mode = food.unit ? "u" : "g";
+        f.qty = String(food.portion);
+        f.auto = true;
+      } else if (!food.unit && f.mode === "u") {
+        f.qty = String(round(rowGrams(f)));
+        f.mode = "g";
+        f.unit = null;
+      } else if (food.unit) {
+        f.unit = food.unit;
+      }
     }
   } else {
-    f.grams = el.value;
+    f.qty = el.value;
     f.auto = false;
   }
-  const hint = $(`[data-hint="${i}"]`);
-  if (hint) hint.textContent = foodHint(f);
+  refreshFoodRow(i);
+  refreshAnalyzeButton();
+}
+
+function toggleUnit(i) {
+  const f = draft.foods[i];
+  if (!f?.unit) return;
+  if (f.mode === "u") {
+    f.qty = String(round(rowGrams(f)));
+    f.mode = "g";
+  } else {
+    f.qty = String(Math.max(0.5, Math.round(((+f.qty || 0) / f.unit.g) * 2) / 2));
+    f.mode = "u";
+  }
+  refreshFoodRow(i);
   refreshAnalyzeButton();
 }
 
@@ -755,6 +808,19 @@ function draftTotals(t) {
     </div>`;
 }
 
+// « ≈ 2 œufs » sous un aliment qui se compte, pour lire les grammes plus facilement.
+function itemUnitHint(it) {
+  const food = findFood(it.name);
+  if (!food?.unit || !(it.grams > 0)) return "";
+  const n = Math.round((it.grams / food.unit.g) * 2) / 2;
+  return n ? `≈ ${String(n).replace(".", ",")} ${unitLabel(food.unit, n)}` : "";
+}
+
+function refreshItemHint(i) {
+  const el = $(`[data-ihint="${i}"]`);
+  if (el && draft.items[i]) el.textContent = itemUnitHint(draft.items[i]);
+}
+
 function itemRow(it, i) {
   const f = (k, label) => `<label>${label}<input type="number" inputmode="decimal" step="any" min="0" data-item="${i}" data-k="${k}" value="${round1(it[k])}"></label>`;
   return `
@@ -764,6 +830,7 @@ function itemRow(it, i) {
         <div class="grams"><input type="number" inputmode="decimal" step="any" min="0" data-item="${i}" data-k="grams" value="${round(it.grams)}"></div>
         <button class="item-del" data-act="del-item" data-i="${i}" aria-label="Retirer">✕</button>
       </div>
+      <p class="food-hint small muted" data-ihint="${i}">${itemUnitHint(it)}</p>
       <div class="item-macros">${f("kcal", "kcal")}${f("protein", "prot.")}${f("carbs", "gluc.")}${f("fat", "lip.")}</div>
     </div>`;
 }
@@ -811,7 +878,7 @@ async function onPhoto(file) {
 }
 
 function foodsText(rows) {
-  return rows.map((f) => `${f.name.trim()}${+f.grams > 0 ? ` : ${+f.grams} g` : " (quantité non précisée)"}`).join(" ; ");
+  return rows.map((f) => `${f.name.trim()}${rowGrams(f) > 0 ? ` : ${qtyText(f)}` : " (quantité non précisée)"}`).join(" ; ");
 }
 
 function mealNameFrom(rows) {
@@ -827,7 +894,7 @@ async function analyze() {
   const unknown = [];
   for (const f of named) {
     const food = findFood(f.name);
-    if (food && +f.grams > 0) local.push(normalizeItem(foodValues(food, +f.grams)));
+    if (food && rowGrams(f) > 0) local.push(normalizeItem(foodValues(food, rowGrams(f))));
     else unknown.push(f);
   }
   if (!d.image && !unknown.length) {
@@ -896,7 +963,7 @@ function onItemInput(el) {
     it.name = el.value;
     const food = findFood(el.value);
     if (food && !it.kcal && !it.protein && !it.carbs && !it.fat) {
-      const v = foodValues(food, it.grams || food.portion);
+      const v = foodValues(food, it.grams || defaultGrams(food));
       Object.assign(it, { grams: v.grams, kcal: v.kcal, protein: v.protein, carbs: v.carbs, fat: v.fat, _per: null });
       for (const m of ["grams", "kcal", "protein", "carbs", "fat"]) {
         const input = $(`input[data-item="${i}"][data-k="${m}"]`);
@@ -904,6 +971,7 @@ function onItemInput(el) {
       }
       $("#draft-totals").innerHTML = draftTotals(mealTotals(draft));
     }
+    refreshItemHint(i);
     return;
   }
   const v = Math.max(0, parseFloat(el.value.replace(",", ".")) || 0);
@@ -922,6 +990,7 @@ function onItemInput(el) {
     it._per = null;
   }
   it[k] = v;
+  if (k === "grams") refreshItemHint(i);
   $("#draft-totals").innerHTML = draftTotals(mealTotals(draft));
 }
 
@@ -980,13 +1049,14 @@ document.addEventListener("click", async (e) => {
     case "manual": {
       const named = namedFoods(draft);
       draft.items = named.length
-        ? named.map((f) => { const food = findFood(f.name); return normalizeItem(food && +f.grams > 0 ? foodValues(food, +f.grams) : { name: f.name, grams: f.grams }); })
+        ? named.map((f) => { const food = findFood(f.name); return normalizeItem(food && rowGrams(f) > 0 ? foodValues(food, rowGrams(f)) : { name: f.name, grams: rowGrams(f) }); })
         : [normalizeItem({ name: "" })];
       draft.name = mealNameFrom(named);
       draft.analyzed = true;
       renderDraft();
       break;
     }
+    case "toggle-unit": toggleUnit(+el.dataset.i); break;
     case "add-food":
       draft.foods.push(emptyFood());
       renderDraft();
