@@ -1185,6 +1185,22 @@ function reviewPayload(meal) {
   };
 }
 
+const GOAL_NAMES = { cut: "sèche", bulk: "prise de masse sèche", maintain: "maintien" };
+
+// Détail des points par critère, selon le barème de l'objectif.
+function breakdownBlock(r) {
+  if (!Array.isArray(r.breakdown) || !r.breakdown.length) return "";
+  return `
+    <div class="breakdown">
+      ${r.breakdown.map((c) => `
+        <div class="crit">
+          <div class="macro-head"><span>${esc(c.label)}</span><b>${c.points} / ${c.max}</b></div>
+          <div class="bar"><i style="width:${c.max ? (c.points / c.max) * 100 : 0}%;background:${scoreColor((c.points / c.max) * 100)}"></i></div>
+        </div>`).join("")}
+      ${r.goal ? `<p class="small muted" style="margin:6px 0 0">Barème « ${GOAL_NAMES[r.goal] || r.goal} »</p>` : ""}
+    </div>`;
+}
+
 function reviewCard(r) {
   const recos = r.recommendations || [];
   return `
@@ -1193,6 +1209,7 @@ function reviewCard(r) {
         <div class="score" style="--c:${scoreColor(r.score)}"><b>${r.score}</b><span>/100</span></div>
         <strong>${esc(r.title)}</strong>
       </div>
+      ${breakdownBlock(r)}
       <p class="small">${esc(r.analysis)}</p>
       ${recos.length ? `<p class="small muted" style="margin:12px 0 4px">Recommandations</p><ul class="recos small">${recos.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
     </div>`;
@@ -1230,7 +1247,7 @@ async function requestReview(id) {
     if (!res.ok) throw new Error(data.error || "Bilan impossible, réessaie.");
     const fresh = state.meals.find((m) => m.id === id);
     if (!fresh) return;
-    fresh.review = { score: data.score, title: data.title, analysis: data.analysis, recommendations: data.recommendations, at: Date.now() };
+    fresh.review = { score: data.score, breakdown: data.breakdown, goal: data.goal, title: data.title, analysis: data.analysis, recommendations: data.recommendations, at: Date.now() };
     saveMeals();
     if (stillOpen()) show(reviewSheet(fresh));
     render();
