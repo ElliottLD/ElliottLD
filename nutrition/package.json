@@ -1,0 +1,16 @@
+{
+  "name": "nutri-track",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Suivi nutrition par photo : chaque repas est analysé par Claude, les données restent sur le téléphone.",
+  "scripts": {
+    "check": "node --check api/analyze.js && node --check public/app.js && node --check public/sw.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
