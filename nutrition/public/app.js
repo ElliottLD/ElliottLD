@@ -127,7 +127,8 @@ function direction(weight, goalWeight) {
 
 function computeTargets(p) {
   const bmr = 10 * p.weight + 6.25 * p.height - 5 * p.age + (p.sex === "f" ? -161 : 5);
-  const tdee = bmr * p.activity;
+  // Dépense : formule (Mifflin-St Jeor × activité) + correction apprise du poids réel.
+  const tdee = bmr * p.activity + (p.kcalAdjust || 0);
   const mode = direction(p.weight, p.goalWeight);
   let kcal = tdee;
   if (mode === "cut") {
@@ -142,6 +143,103 @@ function computeTargets(p) {
   const fat = Math.max(0.8 * Math.min(p.weight, p.goalWeight + 10), (kcal * 0.25) / 9);
   const carbs = Math.max(0, (kcal - protein * 4 - fat * 9) / 4);
   return { kcal: round(kcal / 10) * 10, protein: round(protein), carbs: round(carbs), fat: round(fat), tdee: round(tdee), bmr: round(bmr), mode };
+}
+
+/* ---------- Ajustement automatique de la dépense ----------
+   Sur les 3 dernières semaines : calories notées en moyenne et pente du poids.
+   Dépense réelle ≈ calories mangées − variation de poids × 7700 kcal/kg.
+   La différence avec la formule devient une correction, appliquée par pas de 150 kcal au plus. */
+const ADAPT = { windowDays: 21, minDays: 10, minWeighIns: 4, minSpanDays: 10, maxStep: 150, minChange: 50, rateTolerance: 0.1, cooldownDays: 14, snoozeDays: 7 };
+
+function adaptiveStatus() {
+  const p = state.profile;
+  if (p.custom) return { state: "custom" };
+  const end = shiftKey(todayKey(), -1); // la journée en cours n'est pas finie
+  const start = shiftKey(end, -(ADAPT.windowDays - 1));
+  const base = computeTargets(p);
+  // Jours notés : au moins la moitié de l'objectif, sinon on considère que tout n'a pas été noté.
+  const days = [];
+  for (let k = start; k <= end; k = shiftKey(k, 1)) {
+    const kcal = dayTotals(k).kcal;
+    if (kcal >= base.kcal * 0.5) days.push(kcal);
+  }
+  const weights = state.weights.filter((w) => w.date >= start && w.date <= end);
+  const span = weights.length > 1 ? (parseKey(weights[weights.length - 1].date) - parseKey(weights[0].date)) / 86400000 : 0;
+  const progress = { days: days.length, weighIns: weights.length, span };
+  if (days.length < ADAPT.minDays || weights.length < ADAPT.minWeighIns || span < ADAPT.minSpanDays) return { state: "collecting", ...progress };
+
+  const now = Date.now();
+  const since = (t) => (t ? (now - t) / 86400000 : Infinity);
+  if (since(p.adapt?.at) < ADAPT.cooldownDays) return { state: "cooldown", ...progress, nextIn: Math.ceil(ADAPT.cooldownDays - since(p.adapt.at)) };
+
+  // Pente du poids par moindres carrés (kg / jour) : moins sensible qu'un simple écart premier / dernier.
+  const xs = weights.map((w) => (parseKey(w.date) - parseKey(start)) / 86400000);
+  const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+  const my = weights.reduce((a, w) => a + w.kg, 0) / weights.length;
+  const slope = xs.reduce((a, x, i) => a + (x - mx) * (weights[i].kg - my), 0) / xs.reduce((a, x) => a + (x - mx) ** 2, 0);
+  const intake = days.reduce((a, b) => a + b, 0) / days.length;
+  const realTdee = intake - slope * 7700;
+
+  const oldAdjust = p.kcalAdjust || 0;
+  const formulaTdee = base.tdee - oldAdjust;
+  const wanted = realTdee - formulaTdee;
+  const step = Math.max(-ADAPT.maxStep, Math.min(ADAPT.maxStep, wanted - oldAdjust));
+  const newAdjust = round(oldAdjust + step);
+  const next = computeTargets({ ...p, kcalAdjust: newAdjust });
+  const result = { ...progress, intake: round(intake), weeklyRate: slope * 7, realTdee: round(realTdee), from: base.kcal, to: next.kcal, newAdjust, mode: base.mode };
+  // Le poids varie de quelques centaines de grammes d'un jour à l'autre (eau, sel) :
+  // on ne bouge pas tant que le rythme reste à moins de 0,1 kg / semaine de celui visé.
+  const offTarget = Math.abs(slope * 7 - expectedRate(p, base.mode)) >= ADAPT.rateTolerance;
+  if (!offTarget || Math.abs(next.kcal - base.kcal) < ADAPT.minChange) return { state: "ontrack", ...result };
+  if (since(p.adapt?.dismissedAt) < ADAPT.snoozeDays) return { state: "snoozed", ...result };
+  return { state: "suggest", ...result };
+}
+
+function signedKg(n) {
+  return `${n > 0 ? "+" : n < 0 ? "−" : ""}${fmtKg(Math.abs(round2(n)))}`;
+}
+
+function expectedRate(p, mode) {
+  return mode === "cut" ? -(p.pace || 0.5) : mode === "bulk" ? p.gainPace || 0.25 : 0;
+}
+
+// Carte affichée sur l'écran du jour quand un nouvel objectif est proposé.
+function adaptCard() {
+  const a = adaptiveStatus();
+  if (a.state !== "suggest") return "";
+  const p = state.profile;
+  const target = expectedRate(p, a.mode);
+  const faster = a.mode === "maintain" ? null : Math.abs(a.weeklyRate) > Math.abs(target);
+  const verb = a.mode === "cut" ? "perte" : a.mode === "bulk" ? "prise" : "évolution";
+  const head = a.mode === "maintain"
+    ? `Ton poids bouge de ${signedKg(a.weeklyRate)} kg par semaine alors que tu vises le maintien.`
+    : `Ta ${verb} de poids est plus ${faster ? "rapide" : "lente"} que prévu : ${signedKg(a.weeklyRate)} kg par semaine au lieu de ${signedKg(target)}.`;
+  return `
+    <div class="card adapt">
+      <p style="margin-bottom:6px"><b>Ajustement de ton objectif</b></p>
+      <p class="small">${head} Ton objectif passe de <b>${a.from}</b> à <b>${a.to} kcal</b>.</p>
+      <p class="small muted">Sur les 3 dernières semaines : ${a.days} jours notés à ${a.intake} kcal en moyenne et ${a.weighIns} pesées. Ta dépense réelle est estimée à ${a.realTdee} kcal par jour.</p>
+      <div class="btn-row">
+        <button class="btn primary" data-act="adapt-accept">Accepter</button>
+        <button class="btn" data-act="adapt-later">Plus tard</button>
+      </div>
+    </div>`;
+}
+
+// État de l'ajustement, affiché dans l'onglet Poids.
+function adaptInfo() {
+  const a = adaptiveStatus();
+  const p = state.profile;
+  const adj = p.kcalAdjust ? ` Correction actuelle de ta dépense : <b>${p.kcalAdjust > 0 ? "+" : ""}${p.kcalAdjust} kcal</b>.` : "";
+  const text = {
+    custom: "Tes objectifs sont personnalisés à la main : l'ajustement automatique est désactivé.",
+    collecting: `L'appli apprend ta vraie dépense à partir de tes repas et de ton poids. Sur les 3 dernières semaines : <b>${a.days}/${ADAPT.minDays}</b> jours notés en entier, <b>${a.weighIns}/${ADAPT.minWeighIns}</b> pesées sur au moins ${ADAPT.minSpanDays} jours.`,
+    cooldown: `Objectif ajusté récemment. Prochaine vérification dans ${a.nextIn} jour${a.nextIn > 1 ? "s" : ""}.`,
+    ontrack: `Ton objectif est juste : ta dépense réelle (≈ ${a.realTdee} kcal) correspond à ce qui est prévu.`,
+    snoozed: `Un ajustement de ${a.from} à ${a.to} kcal est en attente ; il te sera reproposé dans quelques jours.`,
+    suggest: `Un nouvel objectif t'est proposé sur l'écran du jour : ${a.from} → ${a.to} kcal.`,
+  }[a.state];
+  return `<p class="small" style="margin:0"><b>Ajustement automatique.</b> ${text}${adj}</p>`;
 }
 
 function targets() {
@@ -397,6 +495,7 @@ function renderToday() {
       <div class="day-title"><strong>${dayLabel(state.day)}</strong><span class="small muted">${round(tot.kcal)} / ${t.kcal} kcal</span></div>
       <button data-act="next-day" aria-label="Jour suivant" ${isToday ? "disabled style='opacity:.3'" : ""}>›</button>
     </div>
+    ${isToday ? adaptCard() : ""}
     <div class="card summary">
       ${ring(tot.kcal, t.kcal)}
       <div class="macros">
@@ -520,6 +619,7 @@ function renderWeight() {
       ${weightChart(pts, p.goalWeight)}
       ${trend !== null ? `<p class="small" style="margin:10px 0 0">Tendance : <b>${trend > 0 ? "+" : ""}${fmtKg(round2(trend))} kg / semaine</b>. ${eta}</p>` : `<p class="small muted" style="margin:10px 0 0">Pèse-toi le matin à jeun, 2 à 3 fois par semaine. La tendance s'affiche après une semaine.</p>`}
     </div>
+    <div class="card">${adaptInfo()}</div>
     ${recent.length ? `<h2>Dernières pesées</h2><div class="card">${recent.map((w) => `<div class="weight-row"><span>${dayLabel(w.date)}</span><span><b>${fmtKg(w.kg)} kg</b> <button data-act="del-weight" data-date="${w.date}" aria-label="Supprimer">✕</button></span></div>`).join("")}</div>` : ""}`;
 }
 
@@ -571,6 +671,7 @@ function renderProfile() {
       <p class="small muted" style="margin-bottom:10px">Objectifs par jour ${p.custom ? "(personnalisés)" : "(calculés automatiquement)"}</p>
       ${targetsBlock(t)}
       <p class="small muted" style="margin:10px 0 0">${modeText(auto, p)}</p>
+      ${p.kcalAdjust ? `<p class="small" style="margin:10px 0 0">Dépense corrigée d'après ton poids réel : <b>${p.kcalAdjust > 0 ? "+" : ""}${p.kcalAdjust} kcal</b> par rapport à la formule. <button class="link" data-act="adapt-reset">Annuler la correction</button></p>` : ""}
       <div class="btn-row" style="margin-top:12px">
         <button class="btn" data-act="custom-targets">Personnaliser</button>
         ${p.custom ? `<button class="btn" data-act="reset-targets">Revenir au calcul auto</button>` : ""}
@@ -1362,6 +1463,26 @@ document.addEventListener("click", async (e) => {
       saveProfile(); render();
       break;
     }
+    case "adapt-accept": {
+      const a = adaptiveStatus();
+      if (a.state !== "suggest") break;
+      state.profile.kcalAdjust = a.newAdjust;
+      state.profile.adapt = { at: Date.now(), from: a.from, to: a.to };
+      saveProfile(); render();
+      toast(`Nouvel objectif : ${a.to} kcal par jour.`);
+      break;
+    }
+    case "adapt-later":
+      state.profile.adapt = { ...state.profile.adapt, dismissedAt: Date.now() };
+      saveProfile(); render();
+      break;
+    case "adapt-reset":
+      if (confirm("Revenir à l'objectif calculé par la formule, sans la correction apprise de ton poids ?")) {
+        delete state.profile.kcalAdjust;
+        state.profile.adapt = { at: Date.now() };
+        saveProfile(); render();
+      }
+      break;
     case "reset-targets": delete state.profile.custom; saveProfile(); render(); break;
     case "share":
       try {
