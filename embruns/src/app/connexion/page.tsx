@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Logo } from "@/components/logo";
 import { Card } from "@/components/ui/card";
+import { isSupabaseConfigured } from "@/lib/env";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Connexion" };
@@ -28,7 +29,13 @@ export default async function LoginPage({ searchParams }: PageProps<"/connexion"
             {error}
           </p>
         ) : null}
-        <LoginForm suite={suite} />
+        {isSupabaseConfigured() ? (
+          <LoginForm suite={suite} />
+        ) : (
+          <p className="rounded-lg bg-marine-50 px-3 py-3 text-sm text-marine-800" role="status">
+            La connexion n&apos;est pas encore ouverte : la base de données n&apos;est pas branchée sur ce déploiement.
+          </p>
+        )}
       </Card>
     </main>
   );

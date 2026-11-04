@@ -7,6 +7,11 @@ function required(name: string, value: string | undefined): string {
   return value;
 }
 
+/** Faux tant que le projet Supabase n'est pas branché (le site public reste servi). */
+export function isSupabaseConfigured(): boolean {
+  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
+}
+
 export function publicEnv() {
   return {
     supabaseUrl: required("NEXT_PUBLIC_SUPABASE_URL", process.env.NEXT_PUBLIC_SUPABASE_URL),

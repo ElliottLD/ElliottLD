@@ -1,10 +1,19 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { publicEnv } from "@/lib/env";
+import { isSupabaseConfigured, publicEnv } from "@/lib/env";
 import { isMerchantPath } from "@/lib/routes";
 
 /** Rafraîchit la session Supabase et protège l'espace commerçant. */
 export async function updateSession(request: NextRequest) {
+  if (!isSupabaseConfigured()) {
+    // Sans Supabase, seul le site public est servi.
+    if (!isMerchantPath(request.nextUrl.pathname)) return NextResponse.next({ request });
+    const url = request.nextUrl.clone();
+    url.pathname = "/connexion";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
   let response = NextResponse.next({ request });
   const { supabaseUrl, supabasePublishableKey } = publicEnv();
 
