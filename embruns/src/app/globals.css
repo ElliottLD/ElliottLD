@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+/*
+ * Identité Embruns (section 3) : bleu marine profond, blanc écume, un accent
+ * corail pour les actions. Beaucoup d'espace, typographie lisible.
+ */
+@theme {
+  --color-marine-950: #06172d;
+  --color-marine-900: #0b2545;
+  --color-marine-800: #13315c;
+  --color-marine-700: #1d4677;
+  --color-marine-500: #4f74a3;
+  --color-marine-300: #8da9c4;
+  --color-marine-100: #dbe5f0;
+  --color-marine-50: #eef3f8;
+
+  --color-ecume: #f7f9fb;
+
+  --color-corail-600: #d4502f;
+  --color-corail-500: #e8664a;
+  --color-corail-100: #fde6df;
+
+  --color-ink: #0f1c2e;
+  --color-muted: #5b6b80;
+  --color-line: #e3e9f0;
+
+  --color-success: #1f8a5b;
+  --color-danger: #c2412d;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background: var(--color-ecume);
+  color: var(--color-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-corail-500);
+  outline-offset: 2px;
+}
