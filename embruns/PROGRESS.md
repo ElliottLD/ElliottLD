@@ -2,6 +2,15 @@
 
 Mis à jour le 4 novembre 2026.
 
+## Étape 2 — Clients et fidélité (commencée à la demande, avant la fin de l'étape 1)
+
+- [ ] Page d'inscription par QR, carte de fidélité web, QR à imprimer
+- [ ] Page Scanner (tampon par scan ou numéro), règle anti-abus, récompense
+- [ ] Rapprochement visite ↔ vente, écran Clients avec segments et fiche client
+  - [x] Écran Clients : compteurs par segment, encart « clients à risque » avec CA mensuel en jeu, recherche par prénom, pagination (fonction SQL `segment_summary`, testée)
+  - [x] Fiche client : segment et sa règle, visites, dépense, panier moyen, carte de tampons, contact et consentement, dernières visites, campagnes reçues
+  - [ ] Rapprochement visite ↔ vente (fenêtre ± 5 min)
+
 ## Étape en cours : 1 — Données de démo, KPI et Accueil
 
 ### Critères
@@ -11,7 +20,7 @@ Mis à jour le 4 novembre 2026.
   - Accès « Explorer la démo » sur `/connexion` (compte de démo partagé, régénération au premier passage du jour), bandeau « Mode démo » et bouton « Réinitialiser la démo »
 - [x] Fonctions SQL des KPI et segments, avec tests unitaires sur un petit jeu de données connu (14 tests calculés à la main)
 - [x] Écrans Accueil (bandeau KPI vs période précédente) et Analyses (graphique du CA, carte de chaleur, top produits, sélecteur 7 j / 30 j / 90 j / 12 mois)
-- [ ] Vérifié en production : nécessite `SUPABASE_SECRET_KEY` sur Vercel (point ouvert 1)
+- [x] Vérifié en production : démo générée sur Supabase (650 clients, 89 639 ventes), accès « Explorer la démo » testé par Elliott
 
 ## Étape 0 — Socle (terminée le 4/11/2026)
 
@@ -65,7 +74,7 @@ Mis à jour le 4 novembre 2026.
 
 ## Points ouverts
 
-1. **Clé secrète Supabase** : `SUPABASE_SECRET_KEY` à ajouter sur Vercel (type « Sensitive ») pour le mode démo.
+1. **Clé secrète Supabase** : ajoutée sur Vercel (Production et Preview), type Secret.
 2. **Déploiement** : la production vient pour l'instant de la branche `claude/new-session-600ez7` ; elle suivra `main` après fusion. Une étape de build ignorée évite de reconstruire quand seul un autre dossier du dépôt change.
 3. **Emails de connexion** : le SMTP intégré de Supabase est très limité en débit ; brancher Resend comme SMTP Auth (étape 4) avant toute démo publique. Le lien magique par défaut ne fonctionne que dans le navigateur où il a été demandé.
 4. **Plan gratuit Supabase** : un projet inactif 7 jours est mis en pause ; à réactiver avant une démo.
