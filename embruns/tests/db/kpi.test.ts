@@ -226,6 +226,18 @@ describe("customer_segments", () => {
     expect(segments[name]).toBe(expected);
   });
 
+  it("segment_summary compte les clients et le CA mensuel par segment", async () => {
+    const rows = await q<{ segment: string; customers: string; monthly_spend: string }>(
+      "select * from segment_summary($1, $2)",
+      [m, AS_OF],
+    );
+    const by = Object.fromEntries(rows.map((r) => [r.segment, r]));
+    const expected = Object.values(segments).reduce<Record<string, number>>((acc, s) => ({ ...acc, [s]: (acc[s] ?? 0) + 1 }), {});
+    for (const [segment, count] of Object.entries(expected)) expect(num(by[segment].customers), segment).toBe(count);
+    // Le VIP a dépensé 6 × 80 € sur 90 jours : 160 € par mois.
+    expect(num(by.vip.monthly_spend)).toBe(160);
+  });
+
   it("le top 10 % de la dépense ne contient que le VIP", () => {
     const vips = Object.entries(segments).filter(([, s]) => s === "vip");
     expect(vips.map(([n]) => n)).toEqual(["vip"]);
