@@ -11,7 +11,7 @@ Mis à jour le 4 novembre 2026.
 3. Tests d'isolation RLS sur un Postgres jetable (stub Supabase), en local et en CI.
 4. Connexion par lien magique (`@supabase/ssr`, proxy Next.js, `getClaims`), création du commerce au premier passage.
 5. Squelette de navigation : 8 écrans vides avec état vide, identité visuelle marine.
-6. Création du projet Supabase (UE) et déploiement Vercel — **en attente de validation** (voir points ouverts).
+6. Déploiement Vercel (fait) ; projet Supabase (UE) en attente.
 
 ### Critères
 
@@ -19,7 +19,8 @@ Mis à jour le 4 novembre 2026.
   - [x] Projet Next.js, build de production vert
   - [x] Connexion par lien magique codée (`/connexion`, `/auth/confirm`, `/auth/deconnexion`), espace commerçant protégé par le proxy
   - [ ] Projet Supabase UE créé, migration appliquée, URL de redirection configurée
-  - [ ] Déployé sur Vercel, connexion testée de bout en bout avec un vrai email
+  - [x] Déployé sur Vercel : projet `embruns` (équipe VIE RADAR), racine `embruns/`, fonctions à Paris (`cdg1`), https://embruns.vercel.app
+  - [ ] Connexion testée de bout en bout avec un vrai email (nécessite Supabase)
 - [x] Schéma complet de la section 6 en migrations, RLS active sur toutes les tables, tests d'isolation entre deux commerçants (65 tests verts ; un test de mutation a confirmé qu'une politique trop large est détectée)
 - [x] Squelette de navigation (8 écrans vides), identité visuelle de base
 
@@ -39,11 +40,12 @@ Mis à jour le 4 novembre 2026.
 | Inscription QR | `merchants.signup_slug` aléatoire | Pas d'identifiant interne dans l'URL publique. |
 | Écart section 6.1 | Table supplémentaire `automation_sends` (bienvenue, relances, anniversaires, demandes d'avis) | Nécessaire pour « au plus une demande d'avis tous les 90 jours » et le suivi envoi / ouverture hors campagnes. |
 | Lien magique | `/auth/confirm` accepte `?code=` (gabarit par défaut) et `?token_hash=&type=` (gabarit personnalisé) | Le second fonctionne d'un appareil à l'autre ; il suffit de changer le gabarit d'email Supabase. |
+| Sans Supabase | Le site public est servi et `/connexion` affiche « connexion pas encore ouverte » ; l'espace commerçant redirige vers `/connexion` | Déployer avant d'avoir la base, sans page en erreur. |
 | Tests base de données | Postgres local/CI + `supabase/tests/supabase-stub.sql` (rôles, `auth.uid()`) | Pas de Docker dans l'environnement ; le stub reproduit ce dont RLS dépend. |
 
 ## Points ouverts
 
 1. **Projet Supabase** : à créer en région UE (Paris, `eu-west-3`). Le compte a déjà un projet actif (`vie-radar`) et un en pause : vérifier la limite de projets du plan gratuit avant création.
-2. **Vercel** : créer le projet (racine `embruns/`), renseigner les variables de `.env.example`, ajouter l'URL de production dans les « Redirect URLs » de Supabase Auth.
+2. **Vercel** : projet créé. Une fois Supabase créé, renseigner les variables de `.env.example` sur Vercel et ajouter `https://embruns.vercel.app/auth/confirm` aux « Redirect URLs » de Supabase Auth. Le déploiement de production vient pour l'instant de la branche `claude/new-session-600ez7` ; les prochains suivront `main` après fusion. Une étape de build ignorée évite de reconstruire quand seul un autre dossier du dépôt change.
 3. **Emails de connexion** : le SMTP intégré de Supabase est très limité en débit ; brancher Resend comme SMTP Auth (prévu à l'étape 4) avant toute démo publique.
 4. **Dépôt dédié** : pour la ligne CV, un dépôt `ElliottLD/embruns` serait plus lisible que ce sous-dossier.
