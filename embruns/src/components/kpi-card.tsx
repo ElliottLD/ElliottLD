@@ -10,7 +10,20 @@ export type KpiDelta = {
 };
 
 /** Tuile de KPI : la valeur, puis sa variation vs la période précédente (icône + texte, jamais la couleur seule). */
-export function KpiCard({ label, value, delta, comparison }: { label: string; value: string; delta: KpiDelta | null; comparison: string }) {
+export function KpiCard({
+  label,
+  value,
+  delta,
+  comparison,
+  hint,
+}: {
+  label: string;
+  value: string;
+  delta: KpiDelta | null;
+  comparison: string;
+  /** Texte affiché à la place de la variation, quand il n'y a pas de comparaison. */
+  hint?: string;
+}) {
   const Icon = delta?.direction === "up" ? ArrowUpRight : delta?.direction === "down" ? ArrowDownRight : ArrowRight;
   return (
     <Card className="p-4 sm:p-5">
@@ -33,7 +46,7 @@ export function KpiCard({ label, value, delta, comparison }: { label: string; va
             <span className="text-muted">{comparison}</span>
           </>
         ) : (
-          <span className="text-muted">Pas de comparaison possible</span>
+          <span className="text-muted">{hint ?? "Pas de comparaison possible"}</span>
         )}
       </p>
     </Card>
