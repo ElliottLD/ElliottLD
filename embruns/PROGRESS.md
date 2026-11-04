@@ -2,7 +2,11 @@
 
 Mis à jour le 4 novembre 2026.
 
-## Étape en cours : 0 — Socle
+## Étape en cours : 1 — Données de démo, KPI et Accueil
+
+Plan à valider (voir fin de fichier).
+
+## Étape 0 — Socle (terminée le 4/11/2026)
 
 ### Plan
 
@@ -15,13 +19,13 @@ Mis à jour le 4 novembre 2026.
 
 ### Critères
 
-- [ ] Projet Next.js (TypeScript) déployé sur Vercel, projet Supabase en région UE, connexion commerçant par lien magique
+- [x] Projet Next.js (TypeScript) déployé sur Vercel, projet Supabase en région UE, connexion commerçant par lien magique
   - [x] Projet Next.js, build de production vert
   - [x] Connexion par lien magique codée (`/connexion`, `/auth/confirm`, `/auth/deconnexion`), espace commerçant protégé par le proxy
   - [x] Projet Supabase `embruns` créé en `eu-west-3` (Paris, plan gratuit), migration appliquée (16 tables, RLS partout, conseiller sécurité : aucune alerte), variables branchées sur Vercel
-  - [ ] URL du site et URL de redirection configurées dans Supabase Auth (tableau de bord, action manuelle)
+  - [x] URL du site et URL de redirection configurées dans Supabase Auth
   - [x] Déployé sur Vercel : projet `embruns` (équipe VIE RADAR), racine `embruns/`, fonctions à Paris (`cdg1`), https://embruns.vercel.app
-  - [ ] Connexion testée de bout en bout avec un vrai email (nécessite Supabase)
+  - [x] Connexion testée de bout en bout avec un vrai email : lien magique, création du commerce, arrivée sur l'Accueil (4/11/2026)
 - [x] Schéma complet de la section 6 en migrations, RLS active sur toutes les tables, tests d'isolation entre deux commerçants (65 tests verts ; un test de mutation a confirmé qu'une politique trop large est détectée)
 - [x] Squelette de navigation (8 écrans vides), identité visuelle de base
 
@@ -46,8 +50,15 @@ Mis à jour le 4 novembre 2026.
 
 ## Points ouverts
 
-1. **Supabase Auth** : dans Authentication > URL Configuration, mettre Site URL = `https://embruns.vercel.app` et ajouter `https://embruns.vercel.app/**` et `http://localhost:3000/**` aux Redirect URLs. Sans ça, le lien magique renvoie vers localhost. La clé secrète (`SUPABASE_SECRET_KEY`) sera ajoutée sur Vercel quand une fonctionnalité serveur en aura besoin (étape 1, mode démo).
-5. **Plan gratuit Supabase** : un projet inactif 7 jours est mis en pause ; à réactiver avant une démo.
-2. **Vercel** : projet créé. Une fois Supabase créé, renseigner les variables de `.env.example` sur Vercel et ajouter `https://embruns.vercel.app/auth/confirm` aux « Redirect URLs » de Supabase Auth. Le déploiement de production vient pour l'instant de la branche `claude/new-session-600ez7` ; les prochains suivront `main` après fusion. Une étape de build ignorée évite de reconstruire quand seul un autre dossier du dépôt change.
-3. **Emails de connexion** : le SMTP intégré de Supabase est très limité en débit ; brancher Resend comme SMTP Auth (prévu à l'étape 4) avant toute démo publique.
-4. **Dépôt dédié** : pour la ligne CV, un dépôt `ElliottLD/embruns` serait plus lisible que ce sous-dossier.
+1. **Clé secrète Supabase** : `SUPABASE_SECRET_KEY` à ajouter sur Vercel pour le mode démo (étape 1).
+2. **Déploiement** : la production vient pour l'instant de la branche `claude/new-session-600ez7` ; elle suivra `main` après fusion. Une étape de build ignorée évite de reconstruire quand seul un autre dossier du dépôt change.
+3. **Emails de connexion** : le SMTP intégré de Supabase est très limité en débit ; brancher Resend comme SMTP Auth (étape 4) avant toute démo publique. Le lien magique par défaut ne fonctionne que dans le navigateur où il a été demandé.
+4. **Plan gratuit Supabase** : un projet inactif 7 jours est mis en pause ; à réactiver avant une démo.
+5. **Dépôt dédié** : pour la ligne CV, un dépôt `ElliottLD/embruns` serait plus lisible que ce sous-dossier.
+
+## Plan proposé — étape 1
+
+1. **Générateur déterministe** (`src/lib/demo/`, TypeScript pur, graine fixe, paramètres regroupés dans un seul fichier) : 12 mois de ventes relatives au jour courant, ~40 produits en 5 catégories avec saisonnalité, ~650 clients à inscription progressive, visites rattachées aux ventes, ~180 avis, 3 campagnes passées, et les scénarios injectés (mardi après-midi −18 %, ~20 réguliers à risque, flan +35 %, >10 clients à un tampon). Testé : mêmes entrées → mêmes données, et chaque scénario mesurable.
+2. **Commerce de démo dédié** « Au Pain Doré » (`is_demo = true`) appartenant à un compte de démo, rempli côté serveur par insertion en masse ; bouton « Réinitialiser la démo » qui le régénère en quelques secondes. Le commerce réel d'un commerçant n'est jamais écrasé.
+3. **Fonctions SQL** `kpi_summary(période)`, `sales_by_slot`, `top_products`, `customer_segments` (section 4.2 et 4.3), comparées à la période précédente de même durée, testées sur un petit jeu de données connu à la main.
+4. **Écrans** : Accueil (bandeau KPI de la semaine vs la précédente) et Analyses (CA par jour, carte de chaleur jour × heure, top produits, panier moyen, part identifiée ; sélecteur 7 j / 30 j / 90 j / 12 mois) avec Recharts.
