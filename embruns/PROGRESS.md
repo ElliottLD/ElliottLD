@@ -4,7 +4,14 @@ Mis à jour le 4 novembre 2026.
 
 ## Étape en cours : 1 — Données de démo, KPI et Accueil
 
-Plan à valider (voir fin de fichier).
+### Critères
+
+- [x] Script de génération déterministe d'« Au Pain Doré », relatif à la date du jour, bouton de réinitialisation
+  - Générateur SQL `public.generate_demo` (paramètres uniquement dans `src/lib/demo/params.ts`), 17 tests : volumes, saisonnalité, part identifiée 5 % → 35 %, scénarios (mardi après-midi −18 %, ~25 réguliers à risque, flan +35 %, >10 clients à un tampon), déterminisme
+  - Accès « Explorer la démo » sur `/connexion` (compte de démo partagé, régénération au premier passage du jour), bandeau « Mode démo » et bouton « Réinitialiser la démo »
+- [x] Fonctions SQL des KPI et segments, avec tests unitaires sur un petit jeu de données connu (14 tests calculés à la main)
+- [x] Écrans Accueil (bandeau KPI vs période précédente) et Analyses (graphique du CA, carte de chaleur, top produits, sélecteur 7 j / 30 j / 90 j / 12 mois)
+- [ ] Vérifié en production : nécessite `SUPABASE_SECRET_KEY` sur Vercel (point ouvert 1)
 
 ## Étape 0 — Socle (terminée le 4/11/2026)
 
@@ -46,19 +53,22 @@ Plan à valider (voir fin de fichier).
 | Écart section 6.1 | Table supplémentaire `automation_sends` (bienvenue, relances, anniversaires, demandes d'avis) | Nécessaire pour « au plus une demande d'avis tous les 90 jours » et le suivi envoi / ouverture hors campagnes. |
 | Lien magique | `/auth/confirm` accepte `?code=` (gabarit par défaut) et `?token_hash=&type=` (gabarit personnalisé) | Le second fonctionne d'un appareil à l'autre ; il suffit de changer le gabarit d'email Supabase. |
 | Sans Supabase | Le site public est servi et `/connexion` affiche « connexion pas encore ouverte » ; l'espace commerçant redirige vers `/connexion` | Déployer avant d'avoir la base, sans page en erreur. |
+| Générateur de démo | En SQL (une seule requête RPC) plutôt qu'en TypeScript | Envoyer ~90 000 ventes et ~190 000 lignes depuis Vercel prendrait des dizaines de Mo à chaque réinitialisation. Hasard = hachage (graine, clé) : déterministe quel que soit l'ordre d'exécution. |
+| Durée de régénération | ≈ 20 s sur le plan gratuit Supabase (11 s en local), au lieu de « quelques secondes » | Écart assumé : 12 mois × ~300 tickets/jour. Délai du rôle `service_role` porté à 60 s (les rôles anon et authenticated gardent 3 s et 8 s). |
+| Fonction `private.rnd` sans `search_path` | Avertissement du conseiller Supabase accepté | Une clause SET empêche l'intégration (inlining) de la fonction et rend la génération des dizaines de fois plus lente. Corps limité à `pg_catalog`, schéma privé, exécution réservée à `service_role`. |
+| Accès démo | `POST /demo` : lien magique généré côté serveur (aucun email), compte `demo@example.com` | Démo accessible sans inscription (anticipe l'étape 8). |
+| Périodes | Jours complets jusqu'à hier, dans le fuseau du commerce ; comparaison avec la période précédente de même durée | « Ce que voit la boulangère lundi matin » = la semaine écoulée. |
+| Segments | Un seul segment par client, priorité perdu > à risque > VIP > régulier > nouveau > **occasionnel** | Les 5 règles se chevauchent ; « occasionnel » regroupe les clients qui n'entrent dans aucune. À confirmer. |
+| VIP | Top 10 % des clients ayant dépensé sur 90 jours (au moins un) | Lecture de « top 10 % de la dépense ». |
+| Taux de retour à 30 j | Inscrits de la période revenus dans les 30 jours suivant l'inscription | Sur une période récente, les 30 jours ne sont pas encore écoulés : le taux est provisoire. |
 | Tests base de données | Postgres local/CI + `supabase/tests/supabase-stub.sql` (rôles, `auth.uid()`) | Pas de Docker dans l'environnement ; le stub reproduit ce dont RLS dépend. |
 
 ## Points ouverts
 
-1. **Clé secrète Supabase** : `SUPABASE_SECRET_KEY` à ajouter sur Vercel pour le mode démo (étape 1).
+1. **Clé secrète Supabase** : `SUPABASE_SECRET_KEY` à ajouter sur Vercel (type « Sensitive ») pour le mode démo.
 2. **Déploiement** : la production vient pour l'instant de la branche `claude/new-session-600ez7` ; elle suivra `main` après fusion. Une étape de build ignorée évite de reconstruire quand seul un autre dossier du dépôt change.
 3. **Emails de connexion** : le SMTP intégré de Supabase est très limité en débit ; brancher Resend comme SMTP Auth (étape 4) avant toute démo publique. Le lien magique par défaut ne fonctionne que dans le navigateur où il a été demandé.
 4. **Plan gratuit Supabase** : un projet inactif 7 jours est mis en pause ; à réactiver avant une démo.
 5. **Dépôt dédié** : pour la ligne CV, un dépôt `ElliottLD/embruns` serait plus lisible que ce sous-dossier.
-
-## Plan proposé — étape 1
-
-1. **Générateur déterministe** (`src/lib/demo/`, TypeScript pur, graine fixe, paramètres regroupés dans un seul fichier) : 12 mois de ventes relatives au jour courant, ~40 produits en 5 catégories avec saisonnalité, ~650 clients à inscription progressive, visites rattachées aux ventes, ~180 avis, 3 campagnes passées, et les scénarios injectés (mardi après-midi −18 %, ~20 réguliers à risque, flan +35 %, >10 clients à un tampon). Testé : mêmes entrées → mêmes données, et chaque scénario mesurable.
-2. **Commerce de démo dédié** « Au Pain Doré » (`is_demo = true`) appartenant à un compte de démo, rempli côté serveur par insertion en masse ; bouton « Réinitialiser la démo » qui le régénère en quelques secondes. Le commerce réel d'un commerçant n'est jamais écrasé.
-3. **Fonctions SQL** `kpi_summary(période)`, `sales_by_slot`, `top_products`, `customer_segments` (section 4.2 et 4.3), comparées à la période précédente de même durée, testées sur un petit jeu de données connu à la main.
-4. **Écrans** : Accueil (bandeau KPI de la semaine vs la précédente) et Analyses (CA par jour, carte de chaleur jour × heure, top produits, panier moyen, part identifiée ; sélecteur 7 j / 30 j / 90 j / 12 mois) avec Recharts.
+6. **Pré-génération de la démo** : aujourd'hui, le premier visiteur du jour attend ~20 s. Une tâche planifiée nocturne (pg_cron) pourra régénérer la démo à l'avance (étape 8).
+7. **Scénarios et date du jour** : les scénarios sont testés pour une date fixe ; certaines dates (lendemain de Noël, fin des glaces) peuvent ajouter d'autres mouvements réels dans les données. À revérifier quand les détecteurs arriveront (étape 5).
