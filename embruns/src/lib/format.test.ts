@@ -25,3 +25,13 @@ describe("format", () => {
     expect(formatDay("2026-11-03")).toBe("3 nov.");
   });
 });
+
+describe("formatDaysAgo", () => {
+  it("formule l'ancienneté de la dernière visite", async () => {
+    const { formatDaysAgo } = await import("./format");
+    expect(formatDaysAgo(null)).toBe("—");
+    expect(formatDaysAgo(0.4)).toBe("aujourd'hui");
+    expect(formatDaysAgo(1.6)).toBe("hier");
+    expect(formatDaysAgo(12.2)).toBe("il y a 12 jours");
+  });
+});
