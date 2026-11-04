@@ -6,10 +6,20 @@ Mis à jour le 4 novembre 2026.
 
 - [ ] Page d'inscription par QR, carte de fidélité web, QR à imprimer
 - [ ] Page Scanner (tampon par scan ou numéro), règle anti-abus, récompense
+  - [x] Recherche par téléphone (normalisé), email, prénom ou jeton de carte ; lecture du QR par caméra (BarcodeDetector, Chrome Android) ; ajout de tampon via `add_stamp` (anti-abus 2 h, récompense et remise à zéro, rattachement à la vente ± 5 min, de même montant si saisi), 6 tests
+  - [ ] À vérifier sur téléphone ; la carte client avec QR arrive avec l'inscription
 - [ ] Rapprochement visite ↔ vente, écran Clients avec segments et fiche client
   - [x] Écran Clients : compteurs par segment, encart « clients à risque » avec CA mensuel en jeu, recherche par prénom, pagination (fonction SQL `segment_summary`, testée)
   - [x] Fiche client : segment et sa règle, visites, dépense, panier moyen, carte de tampons, contact et consentement, dernières visites, campagnes reçues
-  - [ ] Rapprochement visite ↔ vente (fenêtre ± 5 min)
+  - [x] Rapprochement visite ↔ vente au moment du tampon (fenêtre ± 5 min) ; reste à le rejouer quand une vente arrive après le tampon (synchro SumUp, étape 6)
+
+## Écrans remplis en avance sur le plan (à la demande d'Elliott)
+
+Pour que la démo montre toutes les sections, des écrans d'étapes ultérieures affichent déjà les données réelles, sans fonctionnalité simulée :
+- **Avis** (étape 3) : note moyenne, évolution sur 90 jours, répartition, taux de réponse (fonction SQL `review_summary`, testée), liste filtrable, réponse manuelle qui passe l'avis en « répondu ». Reste : réponse proposée par l'IA, demandes d'avis automatiques.
+- **Campagnes** (étape 4) : campagnes passées avec envois, ouvertures, retours sous 14 jours et CA associé (`campaign_results`, testée). Reste : création, envoi par Resend, automatismes.
+- **Réglages** : commerce, programme de fidélité, ton de la marque (validation testée). Reste : logo, QR du comptoir (étape 2), connexions SumUp et CSV (étape 6).
+- **Assistant** (étape 7) : exemples de questions seulement, en attendant la clé API Claude.
 
 ## Étape en cours : 1 — Données de démo, KPI et Accueil
 
