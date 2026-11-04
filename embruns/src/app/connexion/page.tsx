@@ -3,12 +3,14 @@ import Link from "next/link";
 import { Logo } from "@/components/logo";
 import { Card } from "@/components/ui/card";
 import { isSupabaseConfigured } from "@/lib/env";
+import { DemoAccess } from "./demo-access";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Connexion" };
 
 const ERRORS: Record<string, string> = {
   lien: "Ce lien de connexion est invalide ou a expiré. Demandez-en un nouveau.",
+  demo: "La démo est momentanément indisponible. Réessayez dans un instant.",
 };
 
 export default async function LoginPage({ searchParams }: PageProps<"/connexion">) {
@@ -30,7 +32,10 @@ export default async function LoginPage({ searchParams }: PageProps<"/connexion"
           </p>
         ) : null}
         {isSupabaseConfigured() ? (
-          <LoginForm suite={suite} />
+          <>
+            <LoginForm suite={suite} />
+            <DemoAccess />
+          </>
         ) : (
           <p className="rounded-lg bg-marine-50 px-3 py-3 text-sm text-marine-800" role="status">
             La connexion n&apos;est pas encore ouverte : la base de données n&apos;est pas branchée sur ce déploiement.

@@ -8,6 +8,8 @@ export type CurrentMerchant = {
   name: string;
   business_type: string;
   brand_color: string;
+  timezone: string;
+  is_demo: boolean;
 };
 
 /** Utilisateur connecté (vérifié via getClaims), sinon redirection vers la connexion. */
@@ -25,7 +27,7 @@ export const getCurrentMerchant = cache(async (): Promise<CurrentMerchant | null
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("merchants")
-    .select("id, name, business_type, brand_color")
+    .select("id, name, business_type, brand_color, timezone, is_demo")
     .maybeSingle();
   if (error) throw error;
   return data;

@@ -1,6 +1,10 @@
+import { DemoBanner } from "@/components/demo-banner";
 import { Logo } from "@/components/logo";
 import { MobileMenu, MobileTabBar, SidebarNav } from "@/components/merchant-nav";
 import { requireMerchant, requireUser } from "@/lib/merchant";
+
+// La réinitialisation de la démo (action serveur) peut prendre ~20 s.
+export const maxDuration = 60;
 
 export default async function MerchantLayout({ children }: { children: React.ReactNode }) {
   const [user, merchant] = await Promise.all([requireUser(), requireMerchant()]);
@@ -26,7 +30,10 @@ export default async function MerchantLayout({ children }: { children: React.Rea
         <MobileMenu />
       </header>
 
-      <main className="mx-auto w-full max-w-6xl px-4 pb-28 pt-6 sm:px-8 lg:pb-12 lg:pt-10">{children}</main>
+      <main className="mx-auto w-full max-w-6xl px-4 pb-28 pt-6 sm:px-8 lg:pb-12 lg:pt-10">
+        {merchant.is_demo ? <DemoBanner /> : null}
+        {children}
+      </main>
       <MobileTabBar />
     </div>
   );
