@@ -133,9 +133,14 @@ function computeTargets(p) {
   const tdee = bmr * p.activity + (p.kcalAdjust || 0);
   const mode = direction(p.weight, p.goalWeight);
   let kcal = tdee;
+  let limited = false;
   if (mode === "cut") {
-    const deficit = Math.min(((p.pace || 0.5) * 7700) / 7, tdee * 0.25);
-    kcal = Math.max(tdee - deficit, p.sex === "f" ? 1200 : 1500);
+    // Déficit plafonné à 20 % de la dépense, et jamais sous le métabolisme de base :
+    // plus bas, on perd du muscle et l'énergie s'effondre.
+    const floor = Math.max(bmr, p.sex === "f" ? 1200 : 1500);
+    const wanted = tdee - ((p.pace || 0.5) * 7700) / 7;
+    kcal = Math.max(wanted, tdee * 0.8, floor);
+    limited = kcal > wanted + 1;
   } else if (mode === "bulk") {
     kcal = tdee + Math.min(((p.gainPace || 0.25) * 7700) / 7, 500);
   }
@@ -144,7 +149,10 @@ function computeTargets(p) {
   protein = Math.min(protein, (kcal * 0.35) / 4);
   const fat = Math.max(0.8 * Math.min(p.weight, p.goalWeight + 10), (kcal * 0.25) / 9);
   const carbs = Math.max(0, (kcal - protein * 4 - fat * 9) / 4);
-  return { kcal: round(kcal / 10) * 10, protein: round(protein), carbs: round(carbs), fat: round(fat), tdee: round(tdee), bmr: round(bmr), mode };
+  // Rythme réellement visé (kg / semaine), une fois les garde-fous appliqués.
+  const rate = ((kcal - tdee) * 7) / 7700;
+  // Arrondi à la dizaine, vers le haut en sèche pour ne jamais passer sous le plancher.
+  return { kcal: (mode === "cut" ? Math.ceil(kcal / 10) : round(kcal / 10)) * 10, protein: round(protein), carbs: round(carbs), fat: round(fat), tdee: round(tdee), bmr: round(bmr), mode, rate, limited };
 }
 
 /* ---------- Ajustement automatique de la dépense ----------
@@ -191,7 +199,7 @@ function adaptiveStatus() {
   const result = { ...progress, intake: round(intake), weeklyRate: slope * 7, realTdee: round(realTdee), from: base.kcal, to: next.kcal, newAdjust, mode: base.mode };
   // Le poids varie de quelques centaines de grammes d'un jour à l'autre (eau, sel) :
   // on ne bouge pas tant que le rythme reste à moins de 0,1 kg / semaine de celui visé.
-  const offTarget = Math.abs(slope * 7 - expectedRate(p, base.mode)) >= ADAPT.rateTolerance;
+  const offTarget = Math.abs(slope * 7 - base.rate) >= ADAPT.rateTolerance;
   if (!offTarget || Math.abs(next.kcal - base.kcal) < ADAPT.minChange) return { state: "ontrack", ...result };
   if (since(p.adapt?.dismissedAt) < ADAPT.snoozeDays) return { state: "snoozed", ...result };
   return { state: "suggest", ...result };
@@ -201,8 +209,8 @@ function signedKg(n) {
   return `${n > 0 ? "+" : n < 0 ? "−" : ""}${fmtKg(Math.abs(round2(n)))}`;
 }
 
-function expectedRate(p, mode) {
-  return mode === "cut" ? -(p.pace || 0.5) : mode === "bulk" ? p.gainPace || 0.25 : 0;
+function expectedRate(p) {
+  return computeTargets(p).rate;
 }
 
 // Carte affichée sur l'écran du jour quand un nouvel objectif est proposé.
@@ -210,7 +218,7 @@ function adaptCard() {
   const a = adaptiveStatus();
   if (a.state !== "suggest") return "";
   const p = state.profile;
-  const target = expectedRate(p, a.mode);
+  const target = expectedRate(p);
   const faster = a.mode === "maintain" ? null : Math.abs(a.weeklyRate) > Math.abs(target);
   const verb = a.mode === "cut" ? "perte" : a.mode === "bulk" ? "prise" : "évolution";
   const head = a.mode === "maintain"
@@ -406,8 +414,11 @@ function targetsBlock(t) {
 
 function modeText(t, p) {
   if (t.mode === "cut") {
-    const weeks = Math.ceil((p.weight - p.goalWeight) / p.pace);
-    return `Sèche : environ ${t.tdee - t.kcal} kcal sous ta maintenance (${t.tdee} kcal). Objectif atteint en ~${weeks} semaines si tu tiens le rythme.`;
+    const perWeek = Math.max(0.05, -t.rate);
+    const weeks = Math.ceil((p.weight - p.goalWeight) / perWeek);
+    const base = `Sèche : environ ${t.tdee - t.kcal} kcal sous ta maintenance (${t.tdee} kcal). Objectif atteint en ~${weeks} semaines si tu tiens le rythme.`;
+    if (!t.limited) return base;
+    return `${base} Pour protéger ton muscle et ton énergie, l'objectif ne descend pas sous ton métabolisme de base (${t.bmr} kcal) ni à plus de 20 % sous ta dépense : ta perte visée est donc d'environ ${fmtKg(round2(perWeek))} kg par semaine au lieu de ${fmtKg(p.pace || 0.5)}. Pour aller plus vite sans manger moins, bouge plus (marche, sport).`;
   }
   if (t.mode === "bulk") {
     const weeks = Math.ceil((p.goalWeight - p.weight) / (p.gainPace || 0.25));

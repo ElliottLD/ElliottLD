@@ -1,6 +1,6 @@
 // Cache de l'interface pour qu'elle s'ouvre même hors connexion.
 // L'analyse (/api/) passe toujours par le réseau.
-const CACHE = "assiette-v11";
+const CACHE = "assiette-v12";
 const SHELL = ["/", "/index.html", "/styles.css", "/foods.js", "/app.js", "/manifest.webmanifest", "/icons/favicon.png", "/icons/icon-192.png"];
 
 self.addEventListener("install", (e) => {
