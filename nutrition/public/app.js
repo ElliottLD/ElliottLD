@@ -147,7 +147,8 @@ function computeTargets(p) {
   // Protéines hautes en sèche (garder le muscle) comme en prise (en construire).
   let protein = mode === "cut" ? 2 * p.goalWeight : mode === "bulk" ? 2 * p.weight : 1.8 * p.weight;
   protein = Math.min(protein, (kcal * 0.35) / 4);
-  const fat = Math.max(0.8 * Math.min(p.weight, p.goalWeight + 10), (kcal * 0.25) / 9);
+  // Lipides : 0,8 g/kg, entre 25 % et 35 % des calories (sinon, en fort surpoids, ils mangeraient les glucides).
+  const fat = Math.min(Math.max(0.8 * Math.min(p.weight, p.goalWeight + 10), (kcal * 0.25) / 9), (kcal * 0.35) / 9);
   const carbs = Math.max(0, (kcal - protein * 4 - fat * 9) / 4);
   // Rythme réellement visé (kg / semaine), une fois les garde-fous appliqués.
   const rate = ((kcal - tdee) * 7) / 7700;
@@ -351,7 +352,7 @@ function profileFields(p = {}) {
       <input type="hidden" name="sex" value="${sex}">
     </div>
     <div class="grid-2">
-      <label class="field"><span>Âge</span><input name="age" type="number" inputmode="numeric" min="14" max="99" required value="${p.age ?? ""}"></label>
+      <label class="field"><span>Âge</span><input name="age" type="number" inputmode="numeric" min="18" max="100" required value="${p.age ?? ""}"></label>
       <label class="field"><span>Taille (cm)</span><input name="height" type="number" inputmode="numeric" min="120" max="230" required value="${p.height ?? ""}"></label>
       <label class="field"><span>Poids actuel (kg)</span><input name="weight" type="text" inputmode="decimal" autocomplete="off" required value="${p.weight ? fmtKg(p.weight) : ""}"></label>
       <label class="field"><span>Poids visé (kg)</span><input name="goalWeight" type="text" inputmode="decimal" autocomplete="off" required value="${p.goalWeight ? fmtKg(p.goalWeight) : ""}"></label>
@@ -381,7 +382,8 @@ function renderOnboarding() {
       <div id="targets-preview"></div>
       <button class="btn primary block" type="submit">C'est parti</button>
     </form>
-    <p class="center"><button class="link" data-act="import">J'ai une sauvegarde : la restaurer</button></p>`;
+    <p class="center"><button class="link" data-act="import">J'ai une sauvegarde : la restaurer</button></p>
+    <p class="small muted center">Les calculs sont prévus pour les adultes en bonne santé. Enceinte, allaitante, sous traitement ou avec des antécédents de troubles alimentaires : demande d'abord l'avis d'un médecin ou d'un diététicien.</p>`;
 }
 
 function readProfileForm(form) {
@@ -400,6 +402,30 @@ function readProfileForm(form) {
   };
   const ok = [p.age, p.height, p.weight, p.goalWeight].every((n) => Number.isFinite(n) && n > 0);
   return ok ? p : null;
+}
+
+const bmiOf = (kg, cm) => kg / (cm / 100) ** 2;
+
+// Profils pour lesquels l'appli ne doit pas donner d'objectif : renvoie le message à afficher.
+function profileError(p) {
+  if (p.age < 18) return "Assiette est prévue pour les adultes (18 ans et plus) : à l'adolescence, les besoins sont différents et ne se calculent pas avec ces formules.";
+  if (p.age > 100) return "Vérifie ton âge.";
+  if (p.height < 130 || p.height > 220) return "Vérifie ta taille (en centimètres, par exemple 175).";
+  if (p.weight < 35 || p.weight > 250) return "Vérifie ton poids actuel (en kilos).";
+  if (p.goalWeight < 35 || p.goalWeight > 250) return "Vérifie ton poids visé (en kilos).";
+  if (p.goalWeight < p.weight - 0.5 && bmiOf(p.goalWeight, p.height) < 18.5) {
+    const minKg = Math.ceil(18.5 * (p.height / 100) ** 2 * 10) / 10;
+    return `Ce poids visé est en dessous du poids de santé pour ta taille (IMC 18,5). Choisis au moins ${fmtKg(minKg)} kg.`;
+  }
+  return null;
+}
+
+// Cas autorisés mais qui méritent un avertissement.
+function profileWarning(p) {
+  if (p.goalWeight > p.weight + 0.5 && bmiOf(p.weight, p.height) >= 30) {
+    return `Avec ton IMC actuel (${fmtKg(Math.round(bmiOf(p.weight, p.height) * 10) / 10)}), une prise de poids n'est généralement pas conseillée, sauf avec une masse musculaire importante. Demande l'avis d'un professionnel de santé.`;
+  }
+  return null;
 }
 
 function targetsBlock(t) {
@@ -445,8 +471,11 @@ function bindProfileForm(form, isNew) {
     const dir = p ? direction(p.weight, p.goalWeight) : "cut";
     $$("[data-pace]", form).forEach((el) => { el.hidden = el.dataset.pace !== dir; });
     if (!p) { box.innerHTML = ""; return; }
+    const error = profileError(p);
+    if (error) { box.innerHTML = `<div class="notice">${esc(error)}</div>`; return; }
     const t = computeTargets(p);
-    box.innerHTML = `<div class="card" style="background:var(--surface-2);border:0;box-shadow:none"><p class="small muted" style="margin-bottom:10px">Tes objectifs par jour</p>${targetsBlock(t)}<p class="small muted" style="margin:10px 0 0">${modeText(t, p)}</p></div>`;
+    const warning = profileWarning(p);
+    box.innerHTML = `${warning ? `<div class="notice">${esc(warning)}</div>` : ""}<div class="card" style="background:var(--surface-2);border:0;box-shadow:none"><p class="small muted" style="margin-bottom:10px">Tes objectifs par jour</p>${targetsBlock(t)}<p class="small muted" style="margin:10px 0 0">${modeText(t, p)}</p></div>`;
   };
   form.addEventListener("input", preview);
   preview();
@@ -454,6 +483,8 @@ function bindProfileForm(form, isNew) {
     e.preventDefault();
     const p = readProfileForm(form);
     if (!p) { toast("Complète l'âge, la taille et les poids."); return; }
+    const error = profileError(p);
+    if (error) { toast(error); return; }
     const previous = state.profile;
     p.weight = round2(p.weight);
     p.goalWeight = round2(p.goalWeight);
@@ -502,8 +533,11 @@ function renderToday() {
   const meals = state.meals.filter((m) => m.date === state.day).sort((a, b) => a.time - b.time);
   const isToday = state.day === todayKey();
   const hello = state.profile.name ? `Salut ${esc(state.profile.name)}` : "Ton suivi";
+  // Profil créé avant les garde-fous (ex. poids visé sous le poids de santé) : on le signale.
+  const problem = profileError(state.profile);
   return `
     <p class="muted small" style="margin:0">${hello}</p>
+    ${problem ? `<div class="notice">${esc(problem)} <button class="link" data-act="go-profile">Mettre à jour mon profil</button></div>` : ""}
     <div class="day-nav">
       <button data-act="prev-day" aria-label="Jour précédent">‹</button>
       <div class="day-title"><strong>${dayLabel(state.day)}</strong><span class="small muted">${round(tot.kcal)} / ${t.kcal} kcal</span></div>
@@ -1713,6 +1747,7 @@ document.addEventListener("click", async (e) => {
       }
       break;
     case "add-recipe": addRecipeToMeal(el.dataset.id); break;
+    case "go-profile": state.tab = "profile"; render(); break;
     case "reset-targets": delete state.profile.custom; saveProfile(); render(); break;
     case "share":
       try {
