@@ -25,6 +25,8 @@ function Tip({ active, payload }: { active?: boolean; payload?: { payload: WeekP
  */
 export function PriceHistory({ data }: { data: WeekPoint[] }) {
   const prices = data.map((d) => d.price);
+  // Graduations : uniquement les niveaux de prix réellement pratiqués.
+  const levels = [...new Set(prices)].sort((a, b) => a - b);
   const min = Math.min(...prices);
   const max = Math.max(...prices);
   const pad = Math.max(0.05, (max - min) * 0.5);
@@ -51,7 +53,7 @@ export function PriceHistory({ data }: { data: WeekPoint[] }) {
             <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 8 }} syncId="price-history">
               <CartesianGrid vertical={false} stroke="var(--color-line)" />
               <XAxis dataKey="label" {...axis} axisLine={{ stroke: "var(--color-line)" }} minTickGap={16} />
-              <YAxis {...axis} axisLine={false} width={48} domain={[Math.max(0, min - pad), max + pad]} tickFormatter={(v: number) => formatEurosCents(v)} />
+              <YAxis {...axis} axisLine={false} width={48} domain={[Math.max(0, min - pad), max + pad]} ticks={levels.length <= 6 ? levels : undefined} tickFormatter={(v: number) => formatEurosCents(v)} />
               <Tooltip content={<Tip />} />
               <Line type="stepAfter" dataKey="price" stroke="var(--color-corail-600)" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
             </LineChart>

@@ -50,8 +50,8 @@ export function buildExplanationFacts(a: ProductAnalysis): ExplanationFacts | nu
 export function templateExplanation(f: ExplanationFacts): string {
   const reaction =
     f.sensibilite_au_prix === "faible"
-      ? `Vos clients réagissent peu au prix de ce produit (${f.produit.toLowerCase()}).`
-      : `Vos clients sont sensibles au prix de ce produit (${f.produit.toLowerCase()}).`;
+      ? `Sur « ${f.produit} », vos clients réagissent peu au prix.`
+      : `Sur « ${f.produit} », vos clients sont sensibles au prix.`;
   const move = `Passer de ${f.prix_actuel} à ${f.prix_recommande}`;
   const gain =
     f.gain_marge_par_semaine === "0 €"

@@ -80,7 +80,13 @@ export function psychologicalPrice(value: number, lo = -Infinity, hi = Infinity)
   const candidates = psychologicalCandidates(value);
   const eps = 1e-9;
   const inside = candidates.filter((c) => c >= lo - eps && c <= hi + eps);
-  if (inside.length === 0) return round2(Math.min(hi, Math.max(lo, value)));
+  if (inside.length === 0) {
+    // Arrondi au centime vers l'intérieur des bornes (la limite haute prime).
+    let v = round2(Math.min(hi, Math.max(lo, value)));
+    if (v < lo - eps) v = Math.ceil(lo * 100 - eps) / 100;
+    if (v > hi + eps) v = Math.floor(hi * 100 + eps) / 100;
+    return v;
+  }
   return inside.reduce((best, c) => (Math.abs(c - value) < Math.abs(best - value) ? c : best));
 }
 

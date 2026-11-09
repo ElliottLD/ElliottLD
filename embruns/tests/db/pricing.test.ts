@@ -123,7 +123,7 @@ describe("calculs sur la démo", () => {
       const p = a.suggestion!.recommendedPrice;
       expect(Math.abs(p / price - 1), a.product.name).toBeLessThanOrEqual(0.1 + 1e-9);
       if (!a.suggestion!.constraints.includes("margin_floor_unreachable")) {
-        expect(p, a.product.name).toBeGreaterThanOrEqual(unitCost * (1 + minMarginPct / 100) - 1e-9);
+        expect(p, a.product.name).toBeGreaterThanOrEqual(unitCost / (1 - minMarginPct / 100) - 1e-9);
       }
       if (a.priceIndex !== null && a.priceIndex > 115 && !a.belowThreshold) {
         expect(p, a.product.name).toBeLessThanOrEqual(price * 1.02 + 1e-9);

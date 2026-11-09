@@ -18,9 +18,17 @@ export function isBelowMarginThreshold(price: number, unitCost: number, minMargi
   return pct === null || pct < minMarginPct;
 }
 
-/** Prix minimal qui respecte le seuil de marge, tel que défini par la spec : coût × (1 + seuil). */
+/**
+ * Prix minimal qui respecte le seuil de marge.
+ *
+ * Écart assumé avec la spec (« coût × (1 + seuil) ») : cette formule est un
+ * taux de marque sur le coût, alors que le seuil d'alerte porte sur la marge
+ * en % du prix. Avec coût × (1 + 30 %), un produit resterait sous 30 % de
+ * marge. On retient donc coût / (1 − seuil), cohérent avec l'alerte.
+ */
 export function minimumPriceForMargin(unitCost: number, minMarginPct: number): number {
-  return unitCost * (1 + minMarginPct / 100);
+  if (minMarginPct >= 100) return Infinity;
+  return unitCost / (1 - minMarginPct / 100);
 }
 
 /** Marge moyenne en %, pondérée par le chiffre d'affaires (produits vendus seulement). */

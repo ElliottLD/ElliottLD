@@ -125,10 +125,13 @@ describe("prix recommandé et garde-fous", () => {
     expect(r.recommendedPrice).toBe(1.39);
   });
 
-  it("jamais sous le prix de marge minimale coût × (1 + seuil)", () => {
-    // c = 1,2, seuil 30 % → plancher 1,56 ; e = -4 → p* = 1,6 mais prix actuel 1,60 et baisse possible jusqu'à 1,44.
-    const r = recommendPrice({ price: 1.6, unitCost: 1.2, minMarginPct: 30, elasticity: -4, priceIndex: 100 });
-    expect(r.recommendedPrice).toBeGreaterThanOrEqual(1.56);
+  it("jamais sous le prix de marge minimale, coût / (1 − seuil)", () => {
+    // c = 1,2, seuil 30 % → plancher 1,72 (1,2 / 0,7 = 1,714…) ; e = -4 → p* = 1,60, prix actuel 1,65.
+    const r = recommendPrice({ price: 1.65, unitCost: 1.2, minMarginPct: 30, elasticity: -4, priceIndex: 100 });
+    expect(r.recommendedPrice).toBeGreaterThanOrEqual(1.72);
+    expect(r.constraints).toContain("margin_floor");
+    // Au prix recommandé, la marge atteint bien le seuil.
+    expect((r.recommendedPrice - 1.2) / r.recommendedPrice).toBeGreaterThanOrEqual(0.3);
   });
 
   it("plancher de marge au-delà de +10 % : +10 % au maximum, signalé", () => {
@@ -143,9 +146,11 @@ describe("prix recommandé et garde-fous", () => {
     expect(r.constraints).toContain("high_index_cap");
   });
 
-  it("indice > 115 mais marge insuffisante : le plancher de marge l'emporte", () => {
-    const r = recommendPrice({ price: 2, unitCost: 1.7, minMarginPct: 30, elasticity: -0.5, priceIndex: 130 });
-    expect(r.recommendedPrice).toBeGreaterThanOrEqual(2.2 - 1e-9);
+  it("indice > 115 mais marge insuffisante : le plancher de marge l'emporte sur le plafond de +2 %", () => {
+    // c = 1,45 → plancher 2,08 ; plafond d'indice 2,04 ; limite +10 % 2,20.
+    const r = recommendPrice({ price: 2, unitCost: 1.45, minMarginPct: 30, elasticity: -0.5, priceIndex: 130 });
+    expect(r.recommendedPrice).toBeGreaterThanOrEqual(2.08);
+    expect(r.recommendedPrice).toBeLessThanOrEqual(2.2);
   });
 
   it("arrondi psychologique selon l'ordre de grandeur", () => {
@@ -156,6 +161,8 @@ describe("prix recommandé et garde-fous", () => {
     expect(psychologicalPrice(23.6)).toBe(23.9);
     // Aucun candidat dans les bornes : prix borné arrondi au centime.
     expect(psychologicalPrice(1.31, 1.3, 1.32)).toBe(1.31);
+    // Arrondi vers l'intérieur : jamais au-delà de la borne haute.
+    expect(psychologicalPrice(6.039, 6.039, 6.039)).toBe(6.03);
   });
 });
 
