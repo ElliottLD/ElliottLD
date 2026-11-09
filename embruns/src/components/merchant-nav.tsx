@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Home, Mail, MessageCircle, ScanLine, Settings, Star, Users, type LucideIcon } from "lucide-react";
+import { BarChart3, Home, Mail, MessageCircle, ScanLine, Settings, Star, Tag, Users, type LucideIcon } from "lucide-react";
 import { MERCHANT_NAV, type NavIcon } from "@/lib/routes";
 import { cn } from "@/lib/utils";
 
@@ -11,6 +11,7 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   chart: BarChart3,
   users: Users,
   star: Star,
+  tag: Tag,
   mail: Mail,
   chat: MessageCircle,
   settings: Settings,

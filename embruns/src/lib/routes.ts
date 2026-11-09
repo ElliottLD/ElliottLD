@@ -4,6 +4,7 @@ export const MERCHANT_NAV = [
   { href: "/analyses", label: "Analyses", icon: "chart" },
   { href: "/clients", label: "Clients", icon: "users" },
   { href: "/avis", label: "Avis", icon: "star" },
+  { href: "/prix", label: "Prix", icon: "tag" },
   { href: "/campagnes", label: "Campagnes", icon: "mail" },
   { href: "/assistant", label: "Assistant", icon: "chat" },
   { href: "/reglages", label: "Réglages", icon: "settings" },

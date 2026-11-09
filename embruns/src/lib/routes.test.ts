@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { MERCHANT_NAV, isMerchantPath, safeNextPath } from "./routes";
 
 describe("routes", () => {
-  it("expose les 8 écrans du commerçant", () => {
+  it("expose les écrans du commerçant", () => {
     expect(MERCHANT_NAV.map((i) => i.label)).toEqual([
-      "Accueil", "Analyses", "Clients", "Avis", "Campagnes", "Assistant", "Réglages", "Scanner",
+      "Accueil", "Analyses", "Clients", "Avis", "Prix", "Campagnes", "Assistant", "Réglages", "Scanner",
     ]);
   });
 
@@ -12,6 +12,7 @@ describe("routes", () => {
     expect(isMerchantPath("/accueil")).toBe(true);
     expect(isMerchantPath("/clients/123")).toBe(true);
     expect(isMerchantPath("/commerce/nouveau")).toBe(true);
+    expect(isMerchantPath("/prix/abc")).toBe(true);
     expect(isMerchantPath("/")).toBe(false);
     expect(isMerchantPath("/connexion")).toBe(false);
     expect(isMerchantPath("/accueillir")).toBe(false);
