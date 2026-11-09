@@ -13,6 +13,38 @@ Mis à jour le 4 novembre 2026.
   - [x] Fiche client : segment et sa règle, visites, dépense, panier moyen, carte de tampons, contact et consentement, dernières visites, campagnes reçues
   - [x] Rapprochement visite ↔ vente au moment du tampon (fenêtre ± 5 min) ; reste à le rejouer quand une vente arrive après le tampon (synchro SumUp, étape 6)
 
+## Module Pricing (spec `SPEC_module_pricing_embruns.md`, 9 novembre 2026)
+
+### Adaptation à l'existant
+- Ventes : tables existantes `sales` / `sale_items` (prix réellement pratiqué par ligne) ; `products.name` correspond à `sale_items.product_name`. Nouvelles tables : `products`, `competitor_prices`, `price_recommendations`, `product_price_changes` (historique des prix appliqués), toutes avec RLS et clés composites.
+- Agrégations en SQL (`pricing_products`, `pricing_weekly_sales`, date de référence optionnelle pour les tests) ; calculs en TypeScript pur (`src/lib/pricing/`).
+- Données de démo : intégrées à « Au Pain Doré » (pas de second commerçant), régénérées avec le reste de la démo.
+- IA : le « client LLM existant » et le « flux de recommandations » n'existaient pas encore. Client Claude minimal (`src/lib/ai/claude.ts`) ; flux = bloc « Suggestions de prix » sur l'Accueil.
+
+### Critères d'acceptation
+- [x] Page « Prix » avec les données de démo (bandeau, tableau, tri et filtres, fiche produit) — vérifiée en local, à revérifier en production
+- [x] Alertes de marge correctes (2 produits sous 30 % dans la démo, test d'intégration)
+- [x] Indice de prix calculé (dernier relevé de chaque concurrent sur 30 jours) et recalculé à l'ajout d'un prix concurrent
+- [x] Garde-fous testés un par un (±10 %, marge minimale, indice > 115, arrondi)
+- [x] « Données insuffisantes » sans recommandation (pain aux céréales, flan : prix constant)
+- [x] Explication IA vérifiée : tout nombre absent des chiffres calculés fait rejeter le texte (repli sur une phrase générée par le code)
+- [x] « Appliquer » met à jour `products.price`, l'historique et le statut (`accepted`) ; « Ignorer » passe en `ignored`
+- [x] Tests, lint et build verts ; déploiement : voir points ouverts
+
+### Décisions
+| Sujet | Décision | Raison |
+| --- | --- | --- |
+| Plancher de marge | `coût / (1 − seuil)` au lieu de `coût × (1 + seuil)` | La formule de la spec est un taux de marque ; avec elle, un produit pouvait rester sous le seuil d'alerte (formule déjeuner : 8,71 € au lieu de 9,57 €). |
+| Conflit plancher / ±10 % | ±10 % absolu ; si le plancher est au-delà, hausse de +10 % signalée « marge minimale hors de portée en une fois » | « Toujours appliqués » est impossible à tenir pour les deux ; la prudence sur le prix prime. Le plancher l'emporte sur le plafond de +2 % (indice > 115). |
+| Arrondi psychologique | < 5 € : ,x9 (1,39) ; 5 à 20 € : ,49 / ,99 ; ≥ 20 € : ,90 ; toujours dans les bornes | L'exemple de la spec (1,39 €) n'entre pas dans « ,49 / ,90 / ,99 ». |
+| Marge moyenne | Pondérée par le CA des 30 derniers jours | Plus parlante qu'une moyenne simple. |
+| Quantité de référence de l'impact | Moyenne des 4 dernières semaines | q(p) de la formule d'impact. |
+| Recommandations | Une par produit, par prix et par semaine (cache) ; pas de nouvelle suggestion pendant 14 jours après un changement de prix | Évite de surenchérir de +5 % à chaque clic. |
+| Statuts | `proposed` / `accepted` / `ignored` en base, libellés français à l'écran | Code en anglais (règle du projet). |
+| Données de démo | Tests de prix en alternance toutes les 2 semaines | Des blocs plus longs se confondaient avec la saisonnalité (fin de l'été, baisse d'automne). |
+| Fiabilité | La plupart des produits de base sortent en confiance « faible » | Réaliste : un effet prix de ~3 % est noyé dans ±5 % de bruit hebdomadaire. Le flux de l'Accueil ne montre que les fiabilités moyenne et haute. |
+| Modèle IA | `CLAUDE_MODEL_WRITING`, `claude-opus-5-5` par défaut, effort bas | Configurable ; `claude-haiku-5-5` possible pour réduire le coût. |
+
 ## Écrans remplis en avance sur le plan (à la demande d'Elliott)
 
 Pour que la démo montre toutes les sections, des écrans d'étapes ultérieures affichent déjà les données réelles, sans fonctionnalité simulée :
@@ -90,4 +122,6 @@ Pour que la démo montre toutes les sections, des écrans d'étapes ultérieures
 4. **Plan gratuit Supabase** : un projet inactif 7 jours est mis en pause ; à réactiver avant une démo.
 5. **Dépôt dédié** : pour la ligne CV, un dépôt `ElliottLD/embruns` serait plus lisible que ce sous-dossier.
 6. **Pré-génération de la démo** : aujourd'hui, le premier visiteur du jour attend ~20 s. Une tâche planifiée nocturne (pg_cron) pourra régénérer la démo à l'avance (étape 8).
+8. **Clé API Claude** : `ANTHROPIC_API_KEY` à ajouter sur Vercel pour les explications rédigées par l'IA (sinon, phrases générées par le code).
+9. **Gestion des produits** : pas encore d'écran pour créer un produit ou saisir son coût (hors périmètre de la spec pricing) ; seuls les produits de démo existent.
 7. **Scénarios et date du jour** : les scénarios sont testés pour une date fixe ; certaines dates (lendemain de Noël, fin des glaces) peuvent ajouter d'autres mouvements réels dans les données. À revérifier quand les détecteurs arriveront (étape 5).
