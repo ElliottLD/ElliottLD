@@ -89,7 +89,7 @@ $$;
 
 -- Produits suivis, avec prix concurrents récents et CA des 30 derniers jours.
 -- Prix concurrent : dernier relevé de chaque concurrent sur 30 jours, puis moyenne.
-create or replace function public.pricing_products(p_merchant_id uuid)
+create or replace function public.pricing_products(p_merchant_id uuid, p_as_of date default null)
 returns table (
   product_id uuid,
   name text,
@@ -109,7 +109,8 @@ security invoker
 set search_path = ''
 as $$
   with m as (
-    select timezone, (now() at time zone timezone)::date as today from public.merchants where id = p_merchant_id
+    select timezone, coalesce(p_as_of, (now() at time zone timezone)::date) as today
+    from public.merchants where id = p_merchant_id
   )
   select p.id, p.name, p.category, p.price, p.unit_cost, p.min_margin_pct,
          cp.avg_price, coalesce(cp.n, 0),
@@ -140,7 +141,8 @@ $$;
 
 -- Ventes hebdomadaires (semaines complètes, du lundi au dimanche, fuseau du
 -- commerce) des produits suivis : quantité et CA, d'où le prix moyen pondéré.
-create or replace function public.pricing_weekly_sales(p_merchant_id uuid, p_weeks int default 16)
+-- p_as_of (par défaut aujourd'hui) rend les calculs reproductibles en test.
+create or replace function public.pricing_weekly_sales(p_merchant_id uuid, p_weeks int default 16, p_as_of date default null)
 returns table (product_id uuid, week_start date, quantity numeric, revenue numeric)
 language sql
 stable
@@ -148,7 +150,8 @@ security invoker
 set search_path = ''
 as $$
   with m as (
-    select timezone, date_trunc('week', (now() at time zone timezone))::date as current_week
+    select timezone,
+           date_trunc('week', coalesce(p_as_of, (now() at time zone timezone)::date)::timestamp)::date as current_week
     from public.merchants where id = p_merchant_id
   )
   select p.id,
@@ -166,7 +169,7 @@ as $$
   order by 1, 2
 $$;
 
-revoke execute on function public.pricing_products(uuid) from public, anon;
-revoke execute on function public.pricing_weekly_sales(uuid, int) from public, anon;
-grant execute on function public.pricing_products(uuid) to authenticated, service_role;
-grant execute on function public.pricing_weekly_sales(uuid, int) to authenticated, service_role;
+revoke execute on function public.pricing_products(uuid, date) from public, anon;
+revoke execute on function public.pricing_weekly_sales(uuid, int, date) from public, anon;
+grant execute on function public.pricing_products(uuid, date) to authenticated, service_role;
+grant execute on function public.pricing_weekly_sales(uuid, int, date) to authenticated, service_role;
