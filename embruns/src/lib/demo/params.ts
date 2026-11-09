@@ -72,6 +72,67 @@ const products: DemoProduct[] = [
   { name: "Chocolat chaud", category: "boissons", price: 2.5, weight: 3, qty_max: 1, months: [1, 2, 3, 10, 11, 12] },
 ];
 
+/** Multiplicateurs de prix semaine par semaine (de la plus ancienne à la dernière semaine complète). */
+function steps(...segments: [weeks: number, multiplier: number][]): number[] {
+  return segments.flatMap(([weeks, m]) => Array<number>(weeks).fill(m));
+}
+
+/**
+ * Tests de prix : deux niveaux en alternance toutes les 2 semaines sur 16
+ * semaines. Des blocs courts évitent que l'effet prix se confonde avec la
+ * saisonnalité (fin de l'été, glaces, baisse d'affluence d'automne).
+ */
+function alternate(first: number, second: number, blockWeeks = 2, totalWeeks = 16): number[] {
+  return Array.from({ length: totalWeeks }, (_, i) => (Math.floor(i / blockWeeks) % 2 === 0 ? first : second));
+}
+
+/**
+ * Module Pricing : produits suivis, historique de prix sur 16 semaines et
+ * élasticité réelle utilisée pour simuler la réaction des clients.
+ * `elasticity: null` = prix constant, donc « données insuffisantes ».
+ */
+const pricingProducts = [
+  { product: "Baguette tradition", unit_cost: 0.38, elasticity: -0.4, multipliers: alternate(1, 0.92) },
+  { product: "Baguette", unit_cost: 0.3, elasticity: -0.3, multipliers: alternate(0.92, 1) },
+  { product: "Pain de campagne", unit_cost: 0.95, elasticity: -0.6, multipliers: alternate(1, 1.08) },
+  { product: "Pain aux céréales", unit_cost: 1.0, elasticity: null, multipliers: steps([16, 1]) },
+  { product: "Croissant", unit_cost: 0.42, elasticity: -0.9, multipliers: alternate(1, 1.08) },
+  { product: "Pain au chocolat", unit_cost: 0.48, elasticity: -0.8, multipliers: alternate(1.07, 1) },
+  { product: "Croissant aux amandes", unit_cost: 0.8, elasticity: -1.8, multipliers: alternate(1, 0.88) },
+  { product: "Pain aux raisins", unit_cost: 0.55, elasticity: -1.6, multipliers: alternate(0.88, 1) },
+  { product: "Flan pâtissier (part)", unit_cost: 0.75, elasticity: null, multipliers: steps([16, 1]) },
+  { product: "Éclair au chocolat", unit_cost: 1.05, elasticity: -1.5, multipliers: alternate(1, 1.12) },
+  { product: "Tropézienne (part)", unit_cost: 1.4, elasticity: -1.2, multipliers: alternate(0.92, 1) },
+  // Sous le seuil de marge de 30 % : alertes attendues.
+  { product: "Sandwich poulet crudités", unit_cost: 4.5, elasticity: -0.7, multipliers: alternate(1, 0.93) },
+  { product: "Formule déjeuner", unit_cost: 6.7, elasticity: -0.5, multipliers: alternate(0.93, 1) },
+  { product: "Café", unit_cost: 0.25, elasticity: -0.3, multipliers: alternate(1, 1.1) },
+];
+
+/** Relevés concurrents : prix = prix actuel × ratio, arrondi aux 5 centimes. */
+const competitors = [
+  {
+    name: "Maison Fournier",
+    days_ago: 6,
+    ratios: {
+      "Baguette tradition": 1.0, Baguette: 1.0, "Pain de campagne": 0.97, Croissant: 1.04, "Pain au chocolat": 1.02,
+      "Croissant aux amandes": 0.92, "Pain aux raisins": 1.0, "Flan pâtissier (part)": 1.05, "Éclair au chocolat": 0.97,
+      "Tropézienne (part)": 0.8, "Sandwich poulet crudités": 1.0, "Formule déjeuner": 1.02, Café: 1.0,
+    } as Record<string, number>,
+  },
+  {
+    name: "Boulangerie du Port",
+    days_ago: 12,
+    ratios: {
+      "Baguette tradition": 1.04, Baguette: 1.0, Croissant: 0.96, "Pain au chocolat": 0.98, "Croissant aux amandes": 0.95,
+      "Pain aux raisins": 1.06, "Éclair au chocolat": 1.03, "Tropézienne (part)": 0.82, "Sandwich poulet crudités": 0.95,
+      "Formule déjeuner": 1.0,
+    } as Record<string, number>,
+  },
+  // Relevé trop ancien (plus de 30 jours) : ignoré par l'indice de prix.
+  { name: "Maison Fournier", days_ago: 45, ratios: { "Baguette tradition": 0.85, Croissant: 0.85 } as Record<string, number> },
+];
+
 const firstNames = [
   "Léa", "Emma", "Chloé", "Camille", "Manon", "Inès", "Jade", "Louise", "Sarah", "Julie",
   "Lucas", "Hugo", "Louis", "Gabriel", "Arthur", "Jules", "Nathan", "Théo", "Tom", "Paul",
@@ -183,6 +244,9 @@ export const DEMO_PARAMS = {
       ],
     },
   },
+
+  // --- Pricing ---------------------------------------------------------------
+  pricing: { weeks: 16, min_margin_pct: 30, products: pricingProducts, competitors },
 
   // --- Campagnes passées ------------------------------------------------------
   campaigns: [
