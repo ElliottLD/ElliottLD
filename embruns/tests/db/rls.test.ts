@@ -25,6 +25,10 @@ const TABLES = [
   "integrations",
   "import_jobs",
   "assistant_messages",
+  "products",
+  "competitor_prices",
+  "price_recommendations",
+  "product_price_changes",
 ] as const;
 
 type Seeded = { userId: string; merchantId: string; customerId: string; saleId: string; visitId: string; reviewId: string };
@@ -67,6 +71,13 @@ async function seedMerchant(c: Client, email: string, suffix: string): Promise<S
   );
   await c.query("insert into import_jobs (merchant_id, file_name) values ($1, 'ventes.csv')", [merchantId]);
   await c.query("insert into assistant_messages (merchant_id, role, content) values ($1, 'user', '{\"text\":\"Bonjour\"}')", [merchantId]);
+  const productId = await q("insert into products (merchant_id, name, price, unit_cost) values ($1, 'Flan', 2.8, 0.8) returning id", [merchantId]);
+  await c.query("insert into competitor_prices (merchant_id, product_id, competitor_name, price) values ($1, $2, 'Concurrent', 2.9)", [merchantId, productId]);
+  const priceRecoId = await q(
+    "insert into price_recommendations (merchant_id, product_id, current_price, recommended_price, elasticity, confidence, estimated_weekly_impact, explanation, explanation_source) values ($1, $2, 2.8, 2.99, -0.4, 'high', 5, 'x', 'template') returning id",
+    [merchantId, productId],
+  );
+  await c.query("insert into product_price_changes (merchant_id, product_id, old_price, new_price, source, recommendation_id) values ($1, $2, 2.8, 2.99, 'recommendation', $3)", [merchantId, productId, priceRecoId]);
   return { userId, merchantId, customerId, saleId, visitId, reviewId };
 }
 
